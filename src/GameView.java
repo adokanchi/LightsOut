@@ -2,10 +2,9 @@ import javax.swing.*;
 import java.awt.*;
 
 public class GameView extends JFrame {
-    private Game game;
+    private final Game game;
     public static final int WINDOW_WIDTH = 1200;
     public static final int WINDOW_HEIGHT = 700;
-    public static final int CELL_SIZE = 50;
 
     public GameView(Game game) {
         // Initial window properties
@@ -24,7 +23,10 @@ public class GameView extends JFrame {
 
     // Draws board
     public void drawBoard(Graphics g) {
-        int boardSize = CELL_SIZE * game.getNumRows();
+        if (game.getBoard() == null) {
+            return;
+        }
+        int boardSize = game.getBoard().getCellSize() * game.getNumRows();
         int xMargin = (WINDOW_WIDTH - boardSize) / 2;
         int yMargin = (WINDOW_HEIGHT - boardSize) / 2;
         game.getBoard().draw(g, xMargin, yMargin);
@@ -48,6 +50,6 @@ public class GameView extends JFrame {
         g.drawString("SCRAMBLE",20,WINDOW_HEIGHT-20);
         g.drawString("SOLVE",WINDOW_WIDTH-90,50);
 
-
+        // Write the board update text
     }
 }

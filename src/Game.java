@@ -1,11 +1,12 @@
 import java.awt.event.*;
 import java.util.Arrays;
-import java.util.Scanner;
-public class Game implements MouseListener, MouseMotionListener, KeyListener {
+
+import static java.lang.Thread.sleep;
+
+public class Game implements MouseListener, KeyListener {
     private GameView window;
     private Board board;
     private String rowsInput;
-    int numRows;
     private final int[][][] topRows = {
             {{1}}, // 1x1
 
@@ -92,10 +93,13 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
             {0,0,0,0,0,0,0,1,0,0,0,1}} // 12x12
     };
 
+    public Game() {
+        rowsInput = "";
+    }
+
     public Board getBoard() {
         return board;
     }
-
     public void setBoard(int numRows) {
         board = new Board(numRows);
     }
@@ -106,12 +110,45 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
     // Gives a random solvable scramble by starting with a solved board and
     // either clicking or not clicking on each square with a 50/50 chance
     public void scramble() {
+        if (board == null) {
+            return;
+        }
         for (int i = 0; i < getNumRows(); i++) {
             for (int j = 0; j < getNumRows(); j++) {
                 if ((int) (Math.random() + 0.5) == 1) {
                     board.toggleAllAdj(i,j);
                 }
             }
+        }
+    }
+
+    public void solve() {
+        board.solveAll();
+    }
+
+    public void clickHintSquares() {
+        for (int i = 0; i < getNumRows(); i++) {
+            for (int j = 0; j < getNumRows(); j++) {
+                if (board.getBoard()[i][j].isHint()) {
+                    board.toggleAllAdj(i,j);
+                    window.repaint();
+                    try {
+                        sleep(300);
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+    }
+
+    public void solve2() {
+        while (!board.isSolved()) {
+            getHints();
+            window.repaint();
+            try {
+                sleep(300);
+            } catch (Exception ignored) {}
+            clickHintSquares();
+            window.repaint();
         }
     }
 
@@ -127,7 +164,7 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
     }
 
     // Gives the user a hint, highlighting squares in red
-    public void getHints() {
+    public void getHints()  {
         // Hints for propagation
         boolean hintGiven = false;
         for (int i = 0; i < getNumRows()-1; i++) {
@@ -143,6 +180,8 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
         }
 
         // Hints for setting up final propagation
+        if (board.getNumRows() > 12) {return;} // Top row hints only exist for board sizes up to 12x12
+
         int[] botRow = new int[getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
             botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn() ? 1 : 0;
@@ -182,6 +221,7 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
                 return convBinaryArray(i);
             }
         }
+        // This return should never be reached unless the board is in an unsolvable state
         return null;
     }
 
@@ -219,43 +259,28 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
 
     // Turns x/y coordinates of a click into info on which cell was clicked
     public int[] coordsToIndices(int xCoord, int yCoord) {
-        int boardSize = GameView.CELL_SIZE * getNumRows();
+        int boardSize = board.getCellSize() * getNumRows();
         int xTL = (GameView.WINDOW_WIDTH - boardSize) / 2;
-        int xCellIndex = (xCoord - xTL) / GameView.CELL_SIZE;
+        int xCellIndex = (xCoord - xTL) / board.getCellSize();
         int yTL = (GameView.WINDOW_HEIGHT - boardSize) / 2;
-        int yCellIndex = (yCoord - yTL) / GameView.CELL_SIZE;
+        int yCellIndex = (yCoord - yTL) / board.getCellSize();
         return new int[] {xCellIndex, yCellIndex};
     }
-
-    public void inputNumRowsConsole() {
-        Scanner input = new Scanner(System.in);
-        int numRows;
-        do {
-            System.out.println("How many rows/cols?");
-            numRows = Integer.parseInt(input.nextLine());
-        }
-        while (numRows > 12 || numRows < 1);
-        setBoard(numRows);
-    }
-
-    public void inputNumRows() {
-
-    }
-
 
     public void setup() {
         window = new GameView(this);
         this.window.addMouseListener(this);
-        this.window.addMouseMotionListener(this);
+        this.window.addKeyListener(this);
     }
 
     public void runGame() {
-        inputNumRowsConsole();
         setup();
-        scramble();
     }
 
     public void mouseClicked(MouseEvent e) {
+        if (board == null) {
+            return;
+        }
         int x = e.getX();
         int y = e.getY();
         int[] coords = coordsToIndices(x,y);
@@ -278,7 +303,7 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
             }
             // Top right = solve
             if (x > GameView.WINDOW_WIDTH - 100 && y < 100) {
-                board.solveAll();
+                solve2();
             }
         }
         window.repaint();
@@ -287,15 +312,16 @@ public class Game implements MouseListener, MouseMotionListener, KeyListener {
     public void mouseReleased(MouseEvent e) {}
     public void mouseEntered(MouseEvent e) {}
     public void mouseExited(MouseEvent e) {}
-    public void mouseDragged(MouseEvent e) {}
-    public void mouseMoved(MouseEvent e) {}
     public void keyTyped(KeyEvent e) {
-        // TODO: TAKE USER INPUT TO GET BOARD SIZE
-        if (e.getKeyCode() == (KeyEvent.VK_ENTER)) {
-            numRows = Integer.parseInt(rowsInput);
+        if (e.getKeyChar() == (KeyEvent.VK_ENTER)) {
+            setBoard(Integer.parseInt(rowsInput));
+            scramble();
+            rowsInput = "";
+            window.repaint();
             return;
         }
-        rowsInput += (char) e.getKeyCode();
+        rowsInput += e.getKeyChar();
+        System.out.println(rowsInput);
     }
     public void keyReleased(KeyEvent e) {}
     public void keyPressed(KeyEvent e) {}

@@ -1,10 +1,17 @@
 import java.awt.*;
 public class Board {
-
-    private int numRows;
-    private BoardCell[][] board;
+    private final int numRows;
+    private final BoardCell[][] board;
+    private final int cellSize;
 
     public Board(int numRows) {
+        if (numRows < 12) {
+            cellSize = 50;
+        }
+        else
+        {
+            cellSize = 600 / numRows;
+        }
         this.numRows = numRows;
         this.board = new BoardCell[numRows][numRows];
         for (int i = 0; i < numRows; i++) {
@@ -22,12 +29,27 @@ public class Board {
         return numRows;
     }
 
+    public int getCellSize() {
+        return cellSize;
+    }
+
     public void solveAll() {
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
                 board[i][j].setState(false);
             }
         }
+    }
+
+    public boolean isSolved() {
+        for (int i = 0; i < numRows; i++) {
+            for (int j = 0; j < numRows; j++) {
+                if (board[i][j].isOn()) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     // Toggles selected cell and all adjacent cells (if within bounds of array)
@@ -58,9 +80,9 @@ public class Board {
     public void draw(Graphics g, int xTLCorner, int yTLCorner) {
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
-                int x = xTLCorner + GameView.CELL_SIZE * i;
-                int y = yTLCorner + GameView.CELL_SIZE * j;
-                board[i][j].draw(g, x, y);
+                int x = xTLCorner + cellSize * i;
+                int y = yTLCorner + cellSize * j;
+                board[i][j].draw(g, x, y, cellSize);
             }
         }
     }
