@@ -33,7 +33,7 @@ public class Board {
         return cellSize;
     }
 
-    public void solveAll() {
+    public void solve() {
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
                 board[i][j].setState(false);
@@ -74,6 +74,16 @@ public class Board {
             board[row][col+1].toggle();
         }
         return true;
+    }
+
+    public void propagate() {
+        for (int i = 0; i < getNumRows()-1; i++) {
+            for (int j = 0; j < getNumRows(); j++) {
+                if (board[j][i].isOn()) {
+                    toggleAllAdj(j,i+1);
+                }
+            }
+        }
     }
 
     // Draws each cell of board

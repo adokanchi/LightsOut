@@ -107,6 +107,10 @@ public class Game implements MouseListener, KeyListener {
         return board.getNumRows();
     }
 
+    public String getRowsInput() {
+        return rowsInput;
+    }
+
     // Gives a random solvable scramble by starting with a solved board and
     // either clicking or not clicking on each square with a 50/50 chance
     public void scramble() {
@@ -123,7 +127,7 @@ public class Game implements MouseListener, KeyListener {
     }
 
     public void solve() {
-        board.solveAll();
+        board.solve();
     }
 
     public void clickHintSquares() {
@@ -187,6 +191,44 @@ public class Game implements MouseListener, KeyListener {
             botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn() ? 1 : 0;
         }
         int[] linCombs = findLinCombs(topRows[getNumRows() - 1], botRow);
+        for (int i = 0; i < linCombs.length; i++) {
+            if (linCombs[i] == 1) {
+                board.getBoard()[i][0].setHint(true);
+            }
+        }
+    }
+
+    public void getHints2() {
+        // Hints for propagation
+        boolean hintGiven = false;
+        for (int i = 0; i < getNumRows()-1; i++) {
+            for (int j = 0; j < getNumRows(); j++) {
+                if (board.getBoard()[j][i].isOn()) {
+                    board.getBoard()[j][i+1].setHint(true);
+                    hintGiven = true;
+                }
+            }
+            if (hintGiven) {
+                return;
+            }
+        }
+
+        Board b2 = new Board(getNumRows());
+        int[][] topRowMatrix = new int[getNumRows()][getNumRows()];
+        for (int i = 0; i < getNumRows(); i++) {
+            b2.toggleAllAdj(i,0);
+            b2.propagate();
+            for (int j = 0; j < getNumRows(); j++) {
+                topRowMatrix[i][j] = b2.getBoard()[j][getNumRows() - 1].isOn() ? 1 : 0;
+            }
+            b2.solve();
+        }
+
+        int[] botRow = new int[getNumRows()];
+        for (int i = 0; i < getNumRows(); i++) {
+            botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn() ? 1 : 0;
+        }
+        int[] linCombs = findLinCombs(topRowMatrix, botRow);
         for (int i = 0; i < linCombs.length; i++) {
             if (linCombs[i] == 1) {
                 board.getBoard()[i][0].setHint(true);
@@ -291,7 +333,7 @@ public class Game implements MouseListener, KeyListener {
         if (!board.toggleAllAdj(row,col)) {
             // Top left = hint
             if (x < 100 && y < 100) {
-                getHints();
+                getHints2();
             }
             // Bottom right = propagate
             if (x > GameView.WINDOW_WIDTH - 100 && y > GameView.WINDOW_HEIGHT - 100) {
@@ -303,7 +345,7 @@ public class Game implements MouseListener, KeyListener {
             }
             // Top right = solve
             if (x > GameView.WINDOW_WIDTH - 100 && y < 100) {
-                solve2();
+                solve();
             }
         }
         window.repaint();
@@ -320,8 +362,15 @@ public class Game implements MouseListener, KeyListener {
             window.repaint();
             return;
         }
-        rowsInput += e.getKeyChar();
-        System.out.println(rowsInput);
+        if (e.getKeyChar() == (KeyEvent.VK_ESCAPE)) {
+            rowsInput = "";
+            window.repaint();
+            return;
+        }
+        if (Character.isDigit(e.getKeyChar())) {
+            rowsInput += e.getKeyChar();
+            window.repaint();
+        }
     }
     public void keyReleased(KeyEvent e) {}
     public void keyPressed(KeyEvent e) {}

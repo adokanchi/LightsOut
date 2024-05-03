@@ -51,5 +51,8 @@ public class GameView extends JFrame {
         g.drawString("SOLVE",WINDOW_WIDTH-90,50);
 
         // Write the board update text
+        g.drawString("Type a number to change board size:",25,WINDOW_HEIGHT/2);
+        g.drawString(game.getRowsInput(),25,WINDOW_HEIGHT/2 + 50);
+        g.drawString("Press enter to confirm, press escape to cancel",25,WINDOW_HEIGHT/2 + 100);
     }
 }
