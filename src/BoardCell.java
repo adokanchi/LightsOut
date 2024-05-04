@@ -8,11 +8,6 @@ public class BoardCell {
         this.isHint = false;
     }
 
-    public BoardCell(BoardCell inputCell) {
-        this.isOn = inputCell.isOn;
-        this.isHint = inputCell.isHint;
-    }
-
     public void setHint(boolean isHint) {
         this.isHint = isHint;
     }
