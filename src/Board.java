@@ -21,6 +21,17 @@ public class Board {
         }
     }
 
+    public Board(Board inputBoard) {
+        this.cellSize = inputBoard.cellSize;
+        this.numRows = inputBoard.numRows;
+        this.board = new BoardCell[numRows][numRows];
+        for (int i = 0; i < numRows; i++) {
+            for (int j = 0; j < numRows; j++) {
+                board[i][j] = new BoardCell(inputBoard.getBoard()[i][j]);
+            }
+        }
+    }
+
     public BoardCell[][] getBoard() {
         return board;
     }

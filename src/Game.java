@@ -1,9 +1,11 @@
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.*;
 import java.util.Arrays;
 
 import static java.lang.Thread.sleep;
 
-public class Game implements MouseListener, KeyListener {
+public class Game implements MouseListener, KeyListener, ActionListener {
     private GameView window;
     private Board board;
     private String rowsInput;
@@ -126,34 +128,8 @@ public class Game implements MouseListener, KeyListener {
         }
     }
 
-    public void solve() {
-        board.solve();
-    }
-
-    public void clickHintSquares() {
-        for (int i = 0; i < getNumRows(); i++) {
-            for (int j = 0; j < getNumRows(); j++) {
-                if (board.getBoard()[i][j].isHint()) {
-                    board.toggleAllAdj(i,j);
-                    window.repaint();
-                    try {
-                        sleep(300);
-                    } catch (Exception ignored) {}
-                }
-            }
-        }
-    }
-
-    public void solve2() {
-        while (!board.isSolved()) {
-            getHints();
-            window.repaint();
-            try {
-                sleep(300);
-            } catch (Exception ignored) {}
-            clickHintSquares();
-            window.repaint();
-        }
+    public void solveAnim() {
+        clock.start();
     }
 
     // Goes row by row clicking below every white square so that only the last row is unsolved
@@ -167,38 +143,8 @@ public class Game implements MouseListener, KeyListener {
         }
     }
 
-    // Gives the user a hint, highlighting squares in red
-    public void getHints()  {
-        // Hints for propagation
-        boolean hintGiven = false;
-        for (int i = 0; i < getNumRows()-1; i++) {
-            for (int j = 0; j < getNumRows(); j++) {
-                if (board.getBoard()[j][i].isOn()) {
-                    board.getBoard()[j][i+1].setHint(true);
-                    hintGiven = true;
-                }
-            }
-            if (hintGiven) {
-                return;
-            }
-        }
-
-        // Hints for setting up final propagation
-        if (board.getNumRows() > 12) {return;} // Top row hints only exist for board sizes up to 12x12
-
-        int[] botRow = new int[getNumRows()];
-        for (int i = 0; i < getNumRows(); i++) {
-            botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn() ? 1 : 0;
-        }
-        int[] linCombs = findLinCombs(topRows[getNumRows() - 1], botRow);
-        for (int i = 0; i < linCombs.length; i++) {
-            if (linCombs[i] == 1) {
-                board.getBoard()[i][0].setHint(true);
-            }
-        }
-    }
-
-    public void getHints2() {
+    // Gives user a hint, highlighting squares to click in red
+    public void getHints() {
         // Hints for propagation
         boolean hintGiven = false;
         for (int i = 0; i < getNumRows()-1; i++) {
@@ -313,6 +259,7 @@ public class Game implements MouseListener, KeyListener {
         window = new GameView(this);
         this.window.addMouseListener(this);
         this.window.addKeyListener(this);
+        Toolkit.getDefaultToolkit().sync();  // Consider this to reduce flicker
     }
 
     public void runGame() {
@@ -333,7 +280,7 @@ public class Game implements MouseListener, KeyListener {
         if (!board.toggleAllAdj(row,col)) {
             // Top left = hint
             if (x < 100 && y < 100) {
-                getHints2();
+                getHints();
             }
             // Bottom right = propagate
             if (x > GameView.WINDOW_WIDTH - 100 && y > GameView.WINDOW_HEIGHT - 100) {
@@ -345,7 +292,7 @@ public class Game implements MouseListener, KeyListener {
             }
             // Top right = solve
             if (x > GameView.WINDOW_WIDTH - 100 && y < 100) {
-                solve();
+                solveAnim();
             }
         }
         window.repaint();
@@ -374,6 +321,27 @@ public class Game implements MouseListener, KeyListener {
     }
     public void keyReleased(KeyEvent e) {}
     public void keyPressed(KeyEvent e) {}
+
+    Timer clock = new Timer(500, this);
+    public void actionPerformed(ActionEvent e) {
+        // Click the first hint square
+        for (int i = 0; i < getNumRows(); i++) {
+            for (int j = 0; j < getNumRows(); j++) {
+                if (board.getBoard()[i][j].isHint()) {
+                    board.toggleAllAdj(i,j);
+                    window.repaint();
+                    return;
+                }
+            }
+        }
+        if (board.isSolved()) {
+            clock.stop();
+        }
+
+        // If no square was clicked
+        getHints();
+        window.repaint();
+    }
     public static void main(String[] args) {
         Game game = new Game();
         game.runGame();
