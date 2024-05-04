@@ -5,18 +5,19 @@ public class Board {
     private final int cellSize;
 
     public Board(int numRows) {
+        // Standard cell size is
+        final int STANDARD_CELL_SIZE = 50;
         if (numRows < 12) {
-            cellSize = 50;
+            cellSize = STANDARD_CELL_SIZE;
         }
-        else
-        {
-            cellSize = 600 / numRows;
+        else {
+            cellSize = (12 * STANDARD_CELL_SIZE) / numRows;
         }
         this.numRows = numRows;
         this.board = new BoardCell[numRows][numRows];
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
-                board[i][j] = new BoardCell(false);
+                board[i][j] = new BoardCell();
             }
         }
     }
@@ -33,6 +34,7 @@ public class Board {
         return cellSize;
     }
 
+    // Sets board state to solved
     public void solve() {
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
@@ -41,6 +43,7 @@ public class Board {
         }
     }
 
+    // Returns true if the whole board is solved, false if there are any unsolved cells
     public boolean isSolved() {
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
@@ -52,7 +55,9 @@ public class Board {
         return true;
     }
 
-    // Toggles selected cell and all adjacent cells (if within bounds of array)
+    // Checks if row/col are within bounds of array, then toggles selected cell and all adjacent cells
+    // Returns true if the click was within array bounds and cells were toggled, returns false if the
+    // click was outside the board and nothing was toggled
     public boolean toggleAllAdj(int row, int col) {
         // If outside array bounds, return false
         if (row < 0 || col < 0 || row >= numRows || col >= numRows) {
@@ -76,6 +81,7 @@ public class Board {
         return true;
     }
 
+    // "Propagates" the board, going row by row clicking underneath all board cells so that all but the last row becomes solved
     public void propagate() {
         for (int i = 0; i < getNumRows()-1; i++) {
             for (int j = 0; j < getNumRows(); j++) {
@@ -86,7 +92,7 @@ public class Board {
         }
     }
 
-    // Draws each cell of board
+    // Draws each cell of board individually
     public void draw(Graphics g, int xTLCorner, int yTLCorner) {
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {

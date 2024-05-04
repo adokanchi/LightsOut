@@ -1,10 +1,11 @@
 import java.awt.*;
 public class BoardCell {
     private boolean isOn;
+    // isHint is true when the cell is marked as a cell to click by the hint tool
     private boolean isHint;
 
-    public BoardCell(boolean isOn) {
-        this.isOn = isOn;
+    public BoardCell() {
+        this.isOn = false;
         this.isHint = false;
     }
 
@@ -43,6 +44,7 @@ public class BoardCell {
             g.setColor(Color.WHITE);
         }
         // Center
-        g.fillRect(x+2,y+2,size-4,size-4);
+        final int OUTLINE_WIDTH = 2;
+        g.fillRect(x+OUTLINE_WIDTH,y+OUTLINE_WIDTH,size-2*OUTLINE_WIDTH,size-2*OUTLINE_WIDTH);
     }
 }

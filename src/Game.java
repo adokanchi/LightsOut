@@ -8,13 +8,13 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     private Board board;
 
-    //rowsInput is the string the user inputs to change the row number
+    // rowsInput is the string the user inputs to change the row number
     private String rowsInput;
 
     public Game() {
         rowsInput = "";
-        setBoard(5);
         scramble();
+        // setBoard() still needs to be called for the game to become playable
     }
 
     public Board getBoard() {
@@ -79,6 +79,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             }
         }
 
+        if (board.isSolved()) {
+            return;
+        }
+        // If all rows are solved other than the last
         /*
          Figures out how top-row clicks impact the bottom row after propagation by
          testing every possibility on a separate board and storing them in topRowMatrix
@@ -117,7 +121,21 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     // combination of columns of arrs that makes target
     // Or in other words, solves the matrix equation arrs*x=target and returns the vector x
     public int[] findLinCombs(int[][] arrs, int[] target) {
+        // For console info
+        String finalLinComb = "";
+        for (int i = 0; i < arrs.length; i++) {
+            finalLinComb += "1";
+        }
         for (int i = 0; i < Math.pow(2, arrs.length); i++) { // for every possible combination of top row clicks
+            // Print some console info
+            if (i % Math.pow(2,25) == 0) {
+                System.out.println(Integer.toBinaryString(i) + " being checked");
+                System.out.println(finalLinComb + "is the last combination to be checked");
+                System.out.println((Math.log(i) / Math.log(2)) + " binary digits have been checked out of " + arrs.length);
+                String percentage = String.format("%.10f",(100.0 * (i + 1) / Math.pow(2,arrs.length)));
+                System.out.println("Approximately " + (percentage) + "% done\n");
+            }
+
             // j is a copy of i, so we can modify it without changing the loop
             int j = i;
             int count = 0;
