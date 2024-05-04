@@ -5,11 +5,16 @@ import java.util.Arrays;
 
 public class Game implements MouseListener, KeyListener, ActionListener {
     private GameView window;
+
     private Board board;
+
+    //rowsInput is the string the user inputs to change the row number
     private String rowsInput;
 
     public Game() {
         rowsInput = "";
+        setBoard(5);
+        scramble();
     }
 
     public Board getBoard() {
@@ -32,6 +37,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         if (board == null) {
             return;
         }
+        board.solve();
         for (int i = 0; i < getNumRows(); i++) {
             for (int j = 0; j < getNumRows(); j++) {
                 if ((int) (Math.random() + 0.5) == 1) {
@@ -41,6 +47,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
     }
 
+    // Executes the animated solve option
     public void solveAnim() {
         clock.start();
     }
@@ -72,22 +79,33 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             }
         }
 
+        /*
+         Figures out how top-row clicks impact the bottom row after propagation by
+         testing every possibility on a separate board and storing them in topRowMatrix
+        */
         Board b2 = new Board(getNumRows());
         int[][] topRowMatrix = new int[getNumRows()][getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
+            // Click the first-row cell at position i
             b2.toggleAllAdj(i,0);
             b2.propagate();
+            // Store the changes in topRowMatrix as 1s and the constants as 0
             for (int j = 0; j < getNumRows(); j++) {
                 topRowMatrix[i][j] = b2.getBoard()[j][getNumRows() - 1].isOn() ? 1 : 0;
             }
             b2.solve();
         }
 
+        // botRow is the real board's bottom row
         int[] botRow = new int[getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
             botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn() ? 1 : 0;
         }
+
+        // Find a linear combination of top-row moves that would convert the bottom row to solved
         int[] linCombs = findLinCombs(topRowMatrix, botRow);
+
+        // Hint squares
         for (int i = 0; i < linCombs.length; i++) {
             if (linCombs[i] == 1) {
                 board.getBoard()[i][0].setHint(true);
@@ -95,8 +113,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
     }
 
-    // Treating arrs like a matrix and target like a vector, solves the matrix equation arrs*x=target
-    // Or in other words, finds a linear combination of columns of arrs that makes target
+    // Treating arrs like a matrix and target like a vector, finds a linear
+    // combination of columns of arrs that makes target
+    // Or in other words, solves the matrix equation arrs*x=target and returns the vector x
     public int[] findLinCombs(int[][] arrs, int[] target) {
         for (int i = 0; i < Math.pow(2, arrs.length); i++) { // for every possible combination of top row clicks
             // j is a copy of i, so we can modify it without changing the loop
@@ -104,7 +123,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             int count = 0;
             int[] linComb = new int[arrs.length];
 
-            // Compute the linear combination arrs*j
+            // Compute the linear combination arrs*i
             while (j > 0) {
                 if (j % 2 == 1) {
                     j -= 1;
@@ -114,7 +133,8 @@ public class Game implements MouseListener, KeyListener, ActionListener {
                 j /= 2;
             }
 
-            // Reduces each entry of the combination mod 2, as in this game, clicking one cell twice returns it to its original state
+            // Reduces each entry of the combination mod 2, as in this game,
+            // clicking one cell twice returns it to its original state
             linComb = reduceMod2(linComb);
 
             // Checks if i is a valid solution to the matrix equation arrs*x=target
@@ -130,10 +150,12 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     public int[] convBinaryArray(int i) {
         int[] arr = new int[getNumRows()];
         int j = 0;
-        while (i > 0 && j < getNumRows()) {
+        while (i > 0) {
+            // Check last binary digit of i
             if (i % 2 == 1) {
                 arr[j] = 1;
             }
+            // Remove last binary digit of i
             i /= 2;
             j++;
         }
@@ -161,22 +183,20 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     // Turns x/y coordinates of a click into info on which cell was clicked
     public int[] coordsToIndices(int xCoord, int yCoord) {
         int boardSize = board.getCellSize() * getNumRows();
+        // xTL =  top left corner x-coordinate, yTL = top left corner y-coordinate
         int xTL = (GameView.WINDOW_WIDTH - boardSize) / 2;
-        int xCellIndex = (xCoord - xTL) / board.getCellSize();
         int yTL = (GameView.WINDOW_HEIGHT - boardSize) / 2;
+        // Number of cells = (distance to top left corner) / (distance per cell)
+        int xCellIndex = (xCoord - xTL) / board.getCellSize();
         int yCellIndex = (yCoord - yTL) / board.getCellSize();
         return new int[] {xCellIndex, yCellIndex};
     }
 
-    public void setup() {
+    public void runGame() {
         window = new GameView(this);
         this.window.addMouseListener(this);
         this.window.addKeyListener(this);
-        Toolkit.getDefaultToolkit().sync();  // Consider this to reduce flicker
-    }
-
-    public void runGame() {
-        setup();
+        Toolkit.getDefaultToolkit().sync();
     }
 
     public void mouseClicked(MouseEvent e) {
@@ -215,6 +235,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     public void mouseEntered(MouseEvent e) {}
     public void mouseExited(MouseEvent e) {}
     public void keyTyped(KeyEvent e) {
+        // If enter is pressed, change board size
         if (e.getKeyChar() == (KeyEvent.VK_ENTER)) {
             setBoard(Integer.parseInt(rowsInput));
             scramble();
@@ -222,11 +243,13 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             window.repaint();
             return;
         }
+        // If escape is pressed, clear the input field
         if (e.getKeyChar() == (KeyEvent.VK_ESCAPE)) {
             rowsInput = "";
             window.repaint();
             return;
         }
+        // If a number is pressed, add it to the input field
         if (Character.isDigit(e.getKeyChar())) {
             rowsInput += e.getKeyChar();
             window.repaint();
@@ -238,6 +261,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     Timer clock = new Timer(500, this);
     public void actionPerformed(ActionEvent e) {
         // Click the first hint square
+        // If anything is clicked, return immediately
         for (int i = 0; i < getNumRows(); i++) {
             for (int j = 0; j < getNumRows(); j++) {
                 if (board.getBoard()[i][j].isHint()) {
@@ -247,11 +271,14 @@ public class Game implements MouseListener, KeyListener, ActionListener {
                 }
             }
         }
+
+        // If nothing was clicked, if the board is solved, stop calling actionPerformed
         if (board.isSolved()) {
             clock.stop();
         }
 
-        // If no square was clicked
+        // If nothing was clicked but the board still isn't solved, there
+        // are no remaining hint squares, so call getHints() to fix that
         getHints();
         window.repaint();
     }

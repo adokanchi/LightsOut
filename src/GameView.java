@@ -21,7 +21,7 @@ public class GameView extends JFrame {
         g.fillRect(0,0,WINDOW_WIDTH, WINDOW_HEIGHT);
     }
 
-    // Draws board
+    // Draws board one cell at a time
     public void drawBoard(Graphics g) {
         if (game.getBoard() == null) {
             return;
@@ -35,6 +35,8 @@ public class GameView extends JFrame {
     public void paint(Graphics g) {
         clearWindow(g);
         drawBoard(g);
+
+        // TODO: FIX APPEARANCE AND REMOVE MAGIC NUMBERS
 
         // Draws buttons in each corner
         g.setColor(Color.CYAN);
