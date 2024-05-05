@@ -13,7 +13,6 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     public Game() {
         rowsInput = "";
-        scramble();
         // setBoard() still needs to be called for the game to become playable
     }
 
@@ -24,7 +23,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         board = new Board(numRows);
     }
     public int getNumRows() {
-        return board.getNumRows();
+        return board.getBoard().length;
     }
 
     public String getRowsInput() {
@@ -128,9 +127,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
         for (int i = 0; i < Math.pow(2, arrs.length); i++) { // for every possible combination of top row clicks
             // Print some console info
-            if (i % Math.pow(2,25) == 0) {
+            if (i % Math.pow(2,25) == 0 && i != 0) {
                 System.out.println(Integer.toBinaryString(i) + " being checked");
-                System.out.println(finalLinComb + "is the last combination to be checked");
+                System.out.println(finalLinComb + " is the last combination to be checked");
                 System.out.println((Math.log(i) / Math.log(2)) + " binary digits have been checked out of " + arrs.length);
                 String percentage = String.format("%.10f",(100.0 * (i + 1) / Math.pow(2,arrs.length)));
                 System.out.println("Approximately " + (percentage) + "% done\n");
