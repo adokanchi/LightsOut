@@ -30,10 +30,12 @@ public class BoardCell {
     }
 
     public void draw(Graphics g, int x, int y, int size) {
+        int OUTLINE_WIDTH = 2;
         // Outline color
         g.setColor(Color.BLACK);
         if (isHint) {
             g.setColor(Color.RED);
+            OUTLINE_WIDTH = 4;
         }
         // Outline
         g.fillRect(x,y,size,size);
@@ -44,7 +46,6 @@ public class BoardCell {
             g.setColor(Color.WHITE);
         }
         // Center
-        final int OUTLINE_WIDTH = 2;
         g.fillRect(x+OUTLINE_WIDTH,y+OUTLINE_WIDTH,size-2*OUTLINE_WIDTH,size-2*OUTLINE_WIDTH);
     }
 }

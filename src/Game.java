@@ -63,8 +63,18 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
     }
 
+    // Removes the hint property from all cells
+    public void clearHints() {
+        for (int i = 0; i < getNumRows(); i++) {
+            for (int j = 0; j < getNumRows(); j++) {
+                board.getBoard()[i][j].setHint(false);
+            }
+        }
+    }
+
     // Gives user a hint, highlighting squares to click in red
     public void getHints() {
+        clearHints();
         // Hints for propagation
         boolean hintGiven = false;
         for (int i = 0; i < getNumRows()-1; i++) {
@@ -128,7 +138,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
         for (int i = 0; i < Math.pow(2, arrs.length); i++) { // for every possible combination of top row clicks
             // Print some console info
-            if (i % Math.pow(2,25) == 0) {
+            if (i % Math.pow(2,Math.min(21,arrs.length - 3)) == 0) {
                 System.out.println(Integer.toBinaryString(i) + " being checked");
                 System.out.println(finalLinComb + "is the last combination to be checked");
                 System.out.println((Math.log(i) / Math.log(2)) + " binary digits have been checked out of " + arrs.length);

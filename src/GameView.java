@@ -36,19 +36,20 @@ public class GameView extends JFrame {
         clearWindow(g);
         drawBoard(g);
 
-        // TODO: FIX APPEARANCE AND REMOVE MAGIC NUMBERS
-
         // Draws buttons in each corner
+        final int BUTTON_OFFSET = 50;
+        final int button_size = 100;
         g.setColor(Color.CYAN);
-        g.fillRect(0,0,100,100); // Hint
-        g.fillRect(WINDOW_WIDTH-100,WINDOW_HEIGHT-100,100,100); // Propagate
-        g.fillRect(0,WINDOW_HEIGHT-100,100,100); // Scramble
-        g.fillRect(WINDOW_WIDTH-100,0,100,100); // Solve
+        g.fillRect(BUTTON_OFFSET,BUTTON_OFFSET,button_size,button_size); // Hint
+        g.fillRect(WINDOW_WIDTH-BUTTON_OFFSET-button_size,WINDOW_HEIGHT-BUTTON_OFFSET-button_size,button_size,button_size); // Propagate
+        g.fillRect(BUTTON_OFFSET,WINDOW_HEIGHT-BUTTON_OFFSET-button_size,button_size,button_size); // Scramble
+        g.fillRect(WINDOW_WIDTH-BUTTON_OFFSET-button_size,BUTTON_OFFSET,button_size,button_size); // Solve
 
         // Writes button text in each corner
+        final int TEXT_OFFSET = 50;
         g.setColor(Color.BLACK);
-        g.drawString("HINT",50,50);
-        g.drawString("PROPAGATE",WINDOW_WIDTH-90,WINDOW_HEIGHT-20);
+        g.drawString("HINT",BUTTON_OFFSET+TEXT_OFFSET,BUTTON_OFFSET+TEXT_OFFSET);
+        g.drawString("PROPAGATE",WINDOW_WIDTH-BUTTON_OFFSET-TEXT_OFFSET,WINDOW_HEIGHT-BUTTON_OFFSET-TEXT_OFFSET);
         g.drawString("SCRAMBLE",20,WINDOW_HEIGHT-20);
         g.drawString("SOLVE",WINDOW_WIDTH-90,50);
 
