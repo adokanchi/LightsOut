@@ -1,6 +1,5 @@
 import java.awt.*;
 public class Board {
-    private final int numRows;
     private final BoardCell[][] board;
     private final int cellSize;
 
@@ -13,7 +12,6 @@ public class Board {
         else {
             cellSize = (12 * STANDARD_CELL_SIZE) / numRows;
         }
-        this.numRows = numRows;
         this.board = new BoardCell[numRows][numRows];
         for (int i = 0; i < numRows; i++) {
             for (int j = 0; j < numRows; j++) {
@@ -26,18 +24,14 @@ public class Board {
         return board;
     }
 
-    public int getNumRows() {
-        return numRows;
-    }
-
     public int getCellSize() {
         return cellSize;
     }
 
     // Sets board state to solved
     public void solve() {
-        for (int i = 0; i < numRows; i++) {
-            for (int j = 0; j < numRows; j++) {
+        for (int i = 0; i < board.length; i++) {
+            for (int j = 0; j < board.length; j++) {
                 board[i][j].setState(false);
             }
         }
@@ -45,8 +39,8 @@ public class Board {
 
     // Returns true if the whole board is solved, false if there are any unsolved cells
     public boolean isSolved() {
-        for (int i = 0; i < numRows; i++) {
-            for (int j = 0; j < numRows; j++) {
+        for (int i = 0; i < board.length; i++) {
+            for (int j = 0; j < board.length; j++) {
                 if (board[i][j].isOn()) {
                     return false;
                 }
@@ -60,7 +54,7 @@ public class Board {
     // click was outside the board and nothing was toggled
     public boolean toggleAllAdj(int row, int col) {
         // If outside array bounds, return false
-        if (row < 0 || col < 0 || row >= numRows || col >= numRows) {
+        if (row < 0 || col < 0 || row >= board.length || col >= board.length) {
             return false;
         }
         board[row][col].toggle();
@@ -69,13 +63,13 @@ public class Board {
         if (row - 1 >= 0) {
             board[row-1][col].toggle();
         }
-        if (row + 1 <= numRows - 1) {
+        if (row + 1 <= board.length - 1) {
             board[row+1][col].toggle();
         }
         if (col - 1 >= 0) {
             board[row][col-1].toggle();
         }
-        if (col + 1 <= numRows - 1) {
+        if (col + 1 <= board.length - 1) {
             board[row][col+1].toggle();
         }
         return true;
@@ -83,8 +77,8 @@ public class Board {
 
     // "Propagates" the board, going row by row clicking underneath all board cells so that all but the last row becomes solved
     public void propagate() {
-        for (int i = 0; i < getNumRows()-1; i++) {
-            for (int j = 0; j < getNumRows(); j++) {
+        for (int i = 0; i < board.length-1; i++) {
+            for (int j = 0; j < board.length; j++) {
                 if (board[j][i].isOn()) {
                     toggleAllAdj(j,i+1);
                 }
@@ -94,8 +88,8 @@ public class Board {
 
     // Draws each cell of board individually
     public void draw(Graphics g, int xTLCorner, int yTLCorner) {
-        for (int i = 0; i < numRows; i++) {
-            for (int j = 0; j < numRows; j++) {
+        for (int i = 0; i < board.length; i++) {
+            for (int j = 0; j < board.length; j++) {
                 int x = xTLCorner + cellSize * i;
                 int y = yTLCorner + cellSize * j;
                 board[i][j].draw(g, x, y, cellSize);
