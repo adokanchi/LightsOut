@@ -38,24 +38,31 @@ public class GameView extends JFrame {
 
         // Draws buttons in each corner
         final int BUTTON_OFFSET = 50;
-        final int button_size = 100;
+        final int BUTTON_SIZE = 100;
+        final int ARC_SIZE = 30;
         g.setColor(Color.CYAN);
-        g.fillRect(BUTTON_OFFSET,BUTTON_OFFSET,button_size,button_size); // Hint
-        g.fillRect(WINDOW_WIDTH-BUTTON_OFFSET-button_size,WINDOW_HEIGHT-BUTTON_OFFSET-button_size,button_size,button_size); // Propagate
-        g.fillRect(BUTTON_OFFSET,WINDOW_HEIGHT-BUTTON_OFFSET-button_size,button_size,button_size); // Scramble
-        g.fillRect(WINDOW_WIDTH-BUTTON_OFFSET-button_size,BUTTON_OFFSET,button_size,button_size); // Solve
+        g.fillRoundRect(BUTTON_OFFSET,BUTTON_OFFSET,BUTTON_SIZE,BUTTON_SIZE,ARC_SIZE,ARC_SIZE); // Hint
+        g.fillRoundRect(WINDOW_WIDTH-BUTTON_OFFSET-BUTTON_SIZE,WINDOW_HEIGHT-BUTTON_OFFSET-BUTTON_SIZE,BUTTON_SIZE,BUTTON_SIZE,ARC_SIZE,ARC_SIZE); // Propagate
+        g.fillRoundRect(BUTTON_OFFSET,WINDOW_HEIGHT-BUTTON_OFFSET-BUTTON_SIZE,BUTTON_SIZE,BUTTON_SIZE,ARC_SIZE,ARC_SIZE); // Scramble
+        g.fillRoundRect(WINDOW_WIDTH-BUTTON_OFFSET-BUTTON_SIZE,BUTTON_OFFSET,BUTTON_SIZE,BUTTON_SIZE,ARC_SIZE,ARC_SIZE); // Solve
 
         // Writes button text in each corner
-        final int TEXT_OFFSET = 50;
+        final int SCRAMBLE_TEXT_OFFSET_X = 20;
+        final int HINT_TEXT_OFFSET_X = 40;
+        final int SOLVE_TEXT_OFFSET_X = 70;
+        final int PROPAGATE_TEXT_OFFSET_X = 85;
+        final int TEXT_OFFSET_Y = 50;
         g.setColor(Color.BLACK);
-        g.drawString("HINT",BUTTON_OFFSET+TEXT_OFFSET,BUTTON_OFFSET+TEXT_OFFSET);
-        g.drawString("PROPAGATE",WINDOW_WIDTH-BUTTON_OFFSET-TEXT_OFFSET,WINDOW_HEIGHT-BUTTON_OFFSET-TEXT_OFFSET);
-        g.drawString("SCRAMBLE",20,WINDOW_HEIGHT-20);
-        g.drawString("SOLVE",WINDOW_WIDTH-90,50);
+        g.drawString("HINT",BUTTON_OFFSET+HINT_TEXT_OFFSET_X,BUTTON_OFFSET+TEXT_OFFSET_Y);
+        g.drawString("PROPAGATE",WINDOW_WIDTH-BUTTON_OFFSET-PROPAGATE_TEXT_OFFSET_X,WINDOW_HEIGHT-BUTTON_OFFSET-TEXT_OFFSET_Y);
+        g.drawString("SCRAMBLE",BUTTON_OFFSET+SCRAMBLE_TEXT_OFFSET_X,WINDOW_HEIGHT-BUTTON_OFFSET-TEXT_OFFSET_Y);
+        g.drawString("SOLVE",WINDOW_WIDTH-BUTTON_OFFSET-SOLVE_TEXT_OFFSET_X,BUTTON_OFFSET+TEXT_OFFSET_Y);
 
         // Write the board update text
-        g.drawString("Type a number to change board size:",25,WINDOW_HEIGHT/2);
-        g.drawString(game.getRowsInput(),25,WINDOW_HEIGHT/2 + 50);
-        g.drawString("Press enter to confirm, press escape to cancel",25,WINDOW_HEIGHT/2 + 100);
+        final int LINE_SPACE = 50;
+        final int BOARDSIZE_TEXT_OFFSET = 25;
+        g.drawString("Type a number to change board size:",BOARDSIZE_TEXT_OFFSET,WINDOW_HEIGHT/2-LINE_SPACE);
+        g.drawString(game.getRowsInput(),BOARDSIZE_TEXT_OFFSET,WINDOW_HEIGHT/2);
+        g.drawString("Press enter to confirm, press escape to cancel",25,WINDOW_HEIGHT/2 + LINE_SPACE);
     }
 }

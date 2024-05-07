@@ -24,7 +24,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         board = new Board(numRows);
     }
     public int getNumRows() {
-        return board.getNumRows();
+        return board.getBoard().length;
     }
 
     public String getRowsInput() {
@@ -239,20 +239,23 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
         // Attempts to toggle the cell. Runs code inside if outside the array
         if (!board.toggleAllAdj(row,col)) {
+            final int BUTTON_OFFSET = 50;
+            final int BUTTON_SIZE = 100;
+
             // Top left = hint
-            if (x < 100 && y < 100) {
+            if (x < BUTTON_SIZE+BUTTON_OFFSET && y < BUTTON_SIZE+BUTTON_OFFSET) {
                 getHints();
             }
             // Bottom right = propagate
-            if (x > GameView.WINDOW_WIDTH - 100 && y > GameView.WINDOW_HEIGHT - 100) {
+            if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y > GameView.WINDOW_HEIGHT-BUTTON_SIZE-BUTTON_OFFSET) {
                 propagate();
             }
             // Bottom left = scramble
-            if (x < 100 && y > GameView.WINDOW_HEIGHT - 100) {
+            if (x < BUTTON_SIZE+BUTTON_OFFSET && y > GameView.WINDOW_HEIGHT-BUTTON_SIZE-BUTTON_OFFSET) {
                 scramble();
             }
             // Top right = solve
-            if (x > GameView.WINDOW_WIDTH - 100 && y < 100) {
+            if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y < BUTTON_SIZE+BUTTON_OFFSET) {
                 solveAnim();
             }
         }
