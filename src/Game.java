@@ -117,7 +117,8 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
 
         // Find a linear combination of top-row moves that would convert the bottom row to solved
-        int[] linCombs = findLinCombs(topRowMatrix, botRow);
+//        int[] linCombs = findLinCombs(topRowMatrix, botRow);
+        int[] linCombs = solveLinCombMod2(topRowMatrix, botRow);
 
         // Hint squares
         for (int i = 0; i < linCombs.length; i++) {
@@ -131,21 +132,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     // combination of columns of arrs that makes target
     // Or in other words, solves the matrix equation arrs*x=target and returns the vector x
     public int[] findLinCombs(int[][] arrs, int[] target) {
-        // For console info
-        String finalLinComb = "";
-        for (int i = 0; i < arrs.length; i++) {
-            finalLinComb += "1";
-        }
         for (int i = 0; i < Math.pow(2, arrs.length); i++) { // for every possible combination of top row clicks
-            // Print some console info
-            if (i % Math.pow(2,Math.min(21,arrs.length - 3)) == 0) {
-                System.out.println(Integer.toBinaryString(i) + " being checked");
-                System.out.println(finalLinComb + "is the last combination to be checked");
-                System.out.println((Math.log(i) / Math.log(2)) + " binary digits have been checked out of " + arrs.length);
-                String percentage = String.format("%.10f",(100.0 * (i + 1) / Math.pow(2,arrs.length)));
-                System.out.println("Approximately " + (percentage) + "% done\n");
-            }
-
             // j is a copy of i, so we can modify it without changing the loop
             int j = i;
             int count = 0;
@@ -172,6 +159,84 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
         // This return should never be reached unless the board is in an unsolvable state
         return null;
+    }
+
+    // Performs Gaussian Elimination on arrs to find x satisfying arrs*x=target, returns x
+    public int[] solveLinCombMod2(int[][] arrs, int[] target) {
+        int n = arrs.length;
+        if (n == 0) return new int[0];
+
+        int cols = n + 1;
+        int W = (cols + 63) >>> 6;
+
+        long[][] mat = new long[n][W];
+        for (int r = 0; r < n; r++) {
+            // M[r][c] = arrs[c][r]
+            for (int c = 0; c < n; c++) {
+                if ((arrs[c][r] & 1) != 0) setBit(mat[r], c);
+            }
+            if ((target[r] & 1) != 0) setBit(mat[r], n);
+        }
+
+        // where = pivot locations
+        int[] where = new int[n];
+        Arrays.fill(where, -1);
+
+        int row = 0;
+        for (int col = 0; col < n && row < n; col++) {
+            // Find pivot
+            int pivot = -1;
+            for (int r = row; r < n; r++) {
+                if (getBit(mat[r], col)) { pivot = r; break; }
+            }
+            if (pivot == -1) continue;
+
+            // Swap rows
+            if (pivot != row) {
+                long[] tmp = mat[pivot];
+                mat[pivot] = mat[row];
+                mat[row] = tmp;
+            }
+            where[col] = row;
+
+            // Eliminate below
+            for (int r = row + 1; r < n; r++) {
+                if (getBit(mat[r], col)) xorRow(mat[r], mat[row]);
+            }
+
+            row++;
+        }
+
+        // Back substitution (free variables set to 0)
+        int[] x = new int[n];
+        for (int col = n - 1; col >= 0; col--) {
+            int r = where[col];
+            if (r == -1) {
+                x[col] = 0;
+                continue;
+            }
+
+            boolean rhs = getBit(mat[r], n);
+            // compute dot product of row with current x for columns > col
+            for (int c2 = col + 1; c2 < n; c2++) {
+                if (getBit(mat[r], c2) && x[c2] == 1) rhs = !rhs;
+            }
+            x[col] = rhs ? 1 : 0;
+        }
+
+        return x;
+    }
+
+    private static void xorRow(long[] dst, long[] src) {
+        for (int k = 0; k < dst.length; k++) dst[k] ^= src[k];
+    }
+
+    private static boolean getBit(long[] row, int bit) {
+        return ((row[bit >>> 6] >>> (bit & 63)) & 1L) != 0;
+    }
+
+    private static void setBit(long[] row, int bit) {
+        row[bit >>> 6] |= 1L << (bit & 63);
     }
 
     // Takes any decimal number, expresses it in binary, and returns an array where each component is a binary digit.
