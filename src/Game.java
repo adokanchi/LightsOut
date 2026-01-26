@@ -299,8 +299,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         int x = e.getX();
         int y = e.getY();
         int[] coords = coordsToIndices(x,y);
-        int row = coords[0];
-        int col = coords[1];
+        int row = coords[0];        int col = coords[1];
 
         // Attempts to toggle the cell. Runs code inside if outside the array
         if (!board.toggleAllAdj(row,col)) {
@@ -333,6 +332,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     public void keyTyped(KeyEvent e) {
         // If enter is pressed, change board size
         if (e.getKeyChar() == (KeyEvent.VK_ENTER)) {
+            if (rowsInput.isEmpty()) return;
             setBoard(Integer.parseInt(rowsInput));
             scramble();
             rowsInput = "";
@@ -348,6 +348,14 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         // If a number is pressed, add it to the input field
         if (Character.isDigit(e.getKeyChar())) {
             rowsInput += e.getKeyChar();
+            window.repaint();
+            return;
+        }
+
+        // If backspace is pressed, delete last character from the input field
+        if (e.getKeyChar() == KeyEvent.VK_BACK_SPACE) {
+            if (rowsInput.isEmpty()) return;
+            rowsInput = rowsInput.substring(0, rowsInput.length() - 1);
             window.repaint();
         }
     }
