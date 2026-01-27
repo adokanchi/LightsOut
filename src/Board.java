@@ -33,11 +33,11 @@ public class Board {
         for (int i = 0; i < board.length; i++) {
             for (int j = 0; j < board.length; j++) {
                 board[i][j].setState(false);
+                board[i][j].setHint(false);
             }
         }
     }
 
-    // Returns true if the whole board is solved, false if there are any unsolved cells
     public boolean isSolved() {
         for (int i = 0; i < board.length; i++) {
             for (int j = 0; j < board.length; j++) {
@@ -49,38 +49,69 @@ public class Board {
         return true;
     }
 
+    public void clearHints() {
+        int n = board.length;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                board[i][j].setHint(false);
+            }
+        }
+    }
+
     // Checks if row/col are within bounds of array, then toggles selected cell and all adjacent cells
     // Returns true if the click was within array bounds and cells were toggled, returns false if the
     // click was outside the board and nothing was toggled
-    public boolean toggleAllAdj(int row, int col) {
+    public boolean toggleAllAdj(int col, int row) {
         // If outside array bounds, return false
         if (row < 0 || col < 0 || row >= board.length || col >= board.length) {
             return false;
         }
-        board[row][col].toggle();
-        board[row][col].setHint(false);
+
+        if (board[col][row].isHint()) {
+            board[col][row].setHint(false);
+        }
+        else {
+            clearHints();
+        }
+
+        board[col][row].toggle();
         // Attempts to toggle each of the 4 cells around the clicked cell
-        if (row - 1 >= 0) {
-            board[row-1][col].toggle();
-        }
-        if (row + 1 <= board.length - 1) {
-            board[row+1][col].toggle();
-        }
         if (col - 1 >= 0) {
-            board[row][col-1].toggle();
+            board[col-1][row].toggle();
         }
         if (col + 1 <= board.length - 1) {
-            board[row][col+1].toggle();
+            board[col+1][row].toggle();
+        }
+        if (row - 1 >= 0) {
+            board[col][row-1].toggle();
+        }
+        if (row + 1 <= board.length - 1) {
+            board[col][row+1].toggle();
         }
         return true;
     }
 
-    // "Propagates" the board, going row by row clicking underneath all board cells so that all but the last row becomes solved
+    // "Propagates" the board, clicking under all unsolved cells
     public void propagate() {
-        for (int i = 0; i < board.length-1; i++) {
-            for (int j = 0; j < board.length; j++) {
+        int n = board.length;
+        for (int i = 0; i < n-1; i++) {
+            for (int j = 0; j < n; j++) {
                 if (board[j][i].isOn()) {
                     toggleAllAdj(j,i+1);
+                }
+            }
+        }
+    }
+
+    // Gives a random solvable scramble by starting with a solved board and
+    // either clicking or not clicking on each square with a 50/50 chance
+    public void scramble() {
+        solve();
+        int n = board.length;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                if ((int) (Math.random() + 0.5) == 1) {
+                    toggleAllAdj(i,j);
                 }
             }
         }

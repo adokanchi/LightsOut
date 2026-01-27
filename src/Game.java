@@ -13,16 +13,16 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     public Game() {
         rowsInput = "";
-        scramble();
-        // setBoard() still needs to be called for the game to become playable
     }
 
     public Board getBoard() {
         return board;
     }
+
     public void setBoard(int numRows) {
         board = new Board(numRows);
     }
+
     public int getNumRows() {
         return board.getBoard().length;
     }
@@ -31,50 +31,192 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         return rowsInput;
     }
 
-    // Gives a random solvable scramble by starting with a solved board and
-    // either clicking or not clicking on each square with a 50/50 chance
-    public void scramble() {
-        if (board == null) {
-            return;
-        }
-        board.solve();
-        for (int i = 0; i < getNumRows(); i++) {
-            for (int j = 0; j < getNumRows(); j++) {
-                if ((int) (Math.random() + 0.5) == 1) {
-                    board.toggleAllAdj(i,j);
-                }
-            }
-        }
-    }
-
     // Executes the animated solve option
     public void solveAnim() {
         clock.start();
     }
 
-    // Goes row by row clicking below every white square so that only the last row is unsolved
-    public void propagate() {
-        for (int i = 0; i < getNumRows()-1; i++) {
-            for (int j = 0; j < getNumRows(); j++) {
-                if (board.getBoard()[j][i].isOn()) {
-                    board.toggleAllAdj(j,i+1);
-                }
-            }
+    // Compute which cells need to be clicked for an optimal solution, mark with hint border
+    // Generates a "good" solution when the board structure doesn't lead to crazy complications
+    public void solvePerfect() {
+        board.clearHints();
+        int n = board.getBoard().length;
+        boolean[][] on = new boolean[n][n];
+        for (int r = 0; r < n; r++)
+            for (int c = 0; c < n; c++)
+                on[r][c] = board.getBoard()[r][c].isOn();
+
+        long[][] aug = buildAugmentedSystem(on);
+        int N = n * n;
+
+        SolveResult res = solveAndNullspace(aug, N);
+        if (!res.solvable) {
+            // no solution
+            return;
+        }
+
+        long[] best = minimizePopcount(res.particular, res.nullBasis, N, 24);
+
+        // write hints
+        for (int i = 0; i < N; i++) {
+            int r = i / n, c = i % n;
+            board.getBoard()[r][c].setHint(getBit(best, i));
         }
     }
 
-    // Removes the hint property from all cells
-    public void clearHints() {
-        for (int i = 0; i < getNumRows(); i++) {
-            for (int j = 0; j < getNumRows(); j++) {
-                board.getBoard()[i][j].setHint(false);
+    private SolveResult solveAndNullspace(long[][] aug, int N) {
+        // aug: N rows, bits 0..N-1 are A, bit N is rhs
+        int cols = N + 1;
+        int W = (cols + 63) >>> 6;
+
+        int[] where = new int[N];
+        java.util.Arrays.fill(where, -1);
+
+        int row = 0;
+        for (int col = 0; col < N && row < N; col++) {
+            int pivot = -1;
+            for (int r = row; r < N; r++) {
+                if (getBit(aug[r], col)) { pivot = r; break; }
+            }
+            if (pivot == -1) continue;
+
+            if (pivot != row) {
+                long[] tmp = aug[pivot];
+                aug[pivot] = aug[row];
+                aug[row] = tmp;
+            }
+
+            where[col] = row;
+
+            // eliminate all other 1s in this pivot column (Gauss–Jordan)
+            for (int r2 = 0; r2 < N; r2++) {
+                if (r2 != row && getBit(aug[r2], col)) xorRow(aug[r2], aug[row]);
+            }
+
+
+            row++;
+        }
+
+        // inconsistency check
+        for (int r = 0; r < N; r++) {
+            boolean anyLeft = false;
+            for (int c = 0; c < N; c++) {
+                if (getBit(aug[r], c)) { anyLeft = true; break; }
+            }
+            if (!anyLeft && getBit(aug[r], N)) {
+                return new SolveResult(null, null, false);
             }
         }
+
+        // back-sub to get one particular solution (free vars = 0)
+        long[] x0 = new long[W];
+        for (int col = N - 1; col >= 0; col--) {
+            int r = where[col];
+            if (r == -1) continue; // free var remains 0
+
+            boolean rhs = getBit(aug[r], N);
+            for (int c2 = col + 1; c2 < N; c2++) {
+                if (getBit(aug[r], c2) && getBit(x0, c2)) rhs = !rhs;
+            }
+            if (rhs) setBit(x0, col);
+        }
+
+        // build nullspace basis: one vector per free column f
+        java.util.ArrayList<long[]> basis = new java.util.ArrayList<>();
+        for (int f = 0; f < N; f++) {
+            if (where[f] != -1) continue; // pivot column, not free
+
+            long[] v = new long[W];
+            setBit(v, f); // free var = 1
+
+            // for each pivot column p, set v[p] = A[row(p)][f]
+            for (int p = 0; p < N; p++) {
+                int pr = where[p];
+                if (pr == -1) continue;
+                if (getBit(aug[pr], f)) setBit(v, p);
+            }
+            basis.add(v);
+        }
+
+        long[][] nullBasis = basis.toArray(new long[0][]);
+        return new SolveResult(x0, nullBasis, true);
+    }
+
+    private long[] minimizePopcount(long[] x0, long[][] basis, int N, int maxK) {
+        int k = basis.length;
+        if (k == 0) {
+            return x0;
+        }
+
+        if (k > maxK) {
+            // too many free vars to brute force exactly
+            window.setErrString("Too complicated for optimal solution. Showing basic solution.");
+            return x0;
+        }
+
+        long[] best = x0.clone();
+        int bestW = popcount(best);
+
+        int total = 1 << k;
+        long[] cur = new long[best.length];
+
+        for (int mask = 0; mask < total; mask++) {
+            // cur = x0 XOR (xor of selected basis vectors)
+            System.arraycopy(x0, 0, cur, 0, cur.length);
+            int m = mask;
+            int idx = 0;
+            while (m != 0) {
+                if ((m & 1) != 0) {
+                    for (int w = 0; w < cur.length; w++) cur[w] ^= basis[idx][w];
+                }
+                idx++;
+                m >>>= 1;
+            }
+            int wgt = popcount(cur);
+            if (wgt < bestW) {
+                bestW = wgt;
+                best = cur.clone();
+                if (bestW == 0) break;
+            }
+        }
+        return best;
+    }
+
+    private long[][] buildAugmentedSystem(boolean[][] on) {
+        int n = on.length;
+        int N = n * n;
+        int cols = N + 1;
+        int W = (cols + 63) >>> 6;
+
+        long[][] aug = new long[N][W];
+
+        for (int r = 0; r < n; r++) {
+            for (int c = 0; c < n; c++) {
+                int cell = r * n + c;
+
+                // presses that affect this cell:
+                setBit(aug[cell], cell);
+                if (c > 0) setBit(aug[cell], cell - 1);
+                if (c < n - 1) setBit(aug[cell], cell + 1);
+                if (r > 0) setBit(aug[cell], cell - n);
+                if (r < n - 1) setBit(aug[cell], cell + n);
+
+                // RHS = state[cell]
+                if (on[r][c]) setBit(aug[cell], N);
+            }
+        }
+        return aug;
+    }
+
+    private int popcount(long[] v) {
+        int s = 0;
+        for (long x : v) s += Long.bitCount(x);
+        return s;
     }
 
     // Gives user a hint, highlighting squares to click in red
     public void getHints() {
-        clearHints();
+        board.clearHints();
         // Hints for propagation
         boolean hintGiven = false;
         for (int i = 0; i < getNumRows()-1; i++) {
@@ -93,10 +235,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             return;
         }
         // If all rows are solved other than the last
-        /*
-         Figures out how top-row clicks impact the bottom row after propagation by
-         testing every possibility on a separate board and storing them in topRowMatrix
-        */
+
+        // Figures out how top-row clicks impact the bottom row after propagation by
+        // testing every possibility on a separate board and storing them in topRowMatrix
         Board b2 = new Board(getNumRows());
         int[][] topRowMatrix = new int[getNumRows()][getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
@@ -117,7 +258,6 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
 
         // Find a linear combination of top-row moves that would convert the bottom row to solved
-//        int[] linCombs = findLinCombs(topRowMatrix, botRow);
         int[] linCombs = solveLinCombMod2(topRowMatrix, botRow);
 
         // Hint squares
@@ -126,39 +266,6 @@ public class Game implements MouseListener, KeyListener, ActionListener {
                 board.getBoard()[i][0].setHint(true);
             }
         }
-    }
-
-    // Treating arrs like a matrix and target like a vector, finds a linear
-    // combination of columns of arrs that makes target
-    // Or in other words, solves the matrix equation arrs*x=target and returns the vector x
-    public int[] findLinCombs(int[][] arrs, int[] target) {
-        for (int i = 0; i < Math.pow(2, arrs.length); i++) { // for every possible combination of top row clicks
-            // j is a copy of i, so we can modify it without changing the loop
-            int j = i;
-            int count = 0;
-            int[] linComb = new int[arrs.length];
-
-            // Compute the linear combination arrs*i
-            while (j > 0) {
-                if (j % 2 == 1) {
-                    j -= 1;
-                    linComb = addVectors(linComb, arrs[count]);
-                }
-                count++;
-                j /= 2;
-            }
-
-            // Reduces each entry of the combination mod 2, as in this game,
-            // clicking one cell twice returns it to its original state
-            linComb = reduceMod2(linComb);
-
-            // Checks if i is a valid solution to the matrix equation arrs*x=target
-            if (Arrays.equals(linComb, target)) {
-                return convBinaryArray(i);
-            }
-        }
-        // This return should never be reached unless the board is in an unsolvable state
-        return null;
     }
 
     // Performs Gaussian Elimination on arrs to find x satisfying arrs*x=target, returns x
@@ -228,7 +335,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     }
 
     private static void xorRow(long[] dst, long[] src) {
-        for (int k = 0; k < dst.length; k++) dst[k] ^= src[k];
+        for (int i = 0; i < dst.length; i++) dst[i] ^= src[i];
     }
 
     private static boolean getBit(long[] row, int bit) {
@@ -237,40 +344,6 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     private static void setBit(long[] row, int bit) {
         row[bit >>> 6] |= 1L << (bit & 63);
-    }
-
-    // Takes any decimal number, expresses it in binary, and returns an array where each component is a binary digit.
-    public int[] convBinaryArray(int i) {
-        int[] arr = new int[getNumRows()];
-        int j = 0;
-        while (i > 0) {
-            // Check last binary digit of i
-            if (i % 2 == 1) {
-                arr[j] = 1;
-            }
-            // Remove last binary digit of i
-            i /= 2;
-            j++;
-        }
-        return arr;
-    }
-
-    // Reduces each entry of arr mod 2
-    public int[] reduceMod2(int[] arr) {
-        int[] arr2 = new int[arr.length];
-        for (int i = 0; i < arr.length; i++) {
-            arr2[i] = arr[i] % 2;
-        }
-        return arr2;
-    }
-
-    // Adds each entry of a1 and a2 as if they were vectors
-    public int[] addVectors(int[] a1, int[] a2) {
-        int[] sum = new int[a1.length];
-        for (int i = 0; i < a1.length; i++) {
-            sum[i] = a1[i] + a2[i];
-        }
-        return sum;
     }
 
     // Turns x/y coordinates of a click into info on which cell was clicked
@@ -296,10 +369,12 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         if (board == null) {
             return;
         }
+        if (window != null) window.clearErrString();
         int x = e.getX();
         int y = e.getY();
         int[] coords = coordsToIndices(x,y);
-        int row = coords[0];        int col = coords[1];
+        int row = coords[0];
+        int col = coords[1];
 
         // Attempts to toggle the cell. Runs code inside if outside the array
         if (!board.toggleAllAdj(row,col)) {
@@ -312,15 +387,19 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             }
             // Bottom right = propagate
             if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y > GameView.WINDOW_HEIGHT-BUTTON_SIZE-BUTTON_OFFSET) {
-                propagate();
+                board.propagate();
             }
             // Bottom left = scramble
             if (x < BUTTON_SIZE+BUTTON_OFFSET && y > GameView.WINDOW_HEIGHT-BUTTON_SIZE-BUTTON_OFFSET) {
-                scramble();
+                board.scramble();
             }
             // Top right = solve
             if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y < BUTTON_SIZE+BUTTON_OFFSET) {
                 solveAnim();
+            }
+            // Middle right = perfect solve
+            if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y > (GameView.WINDOW_HEIGHT - BUTTON_SIZE) / 2 && y < (GameView.WINDOW_HEIGHT + BUTTON_SIZE) / 2) {
+                solvePerfect();
             }
         }
         window.repaint();
@@ -334,7 +413,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         if (e.getKeyChar() == (KeyEvent.VK_ENTER)) {
             if (rowsInput.isEmpty()) return;
             setBoard(Integer.parseInt(rowsInput));
-            scramble();
+            board.scramble();
             rowsInput = "";
             window.repaint();
             return;
@@ -368,15 +447,15 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         // If anything is clicked, return immediately
         for (int i = 0; i < getNumRows(); i++) {
             for (int j = 0; j < getNumRows(); j++) {
-                if (board.getBoard()[i][j].isHint()) {
-                    board.toggleAllAdj(i,j);
+                if (board.getBoard()[j][i].isHint()) {
+                    board.toggleAllAdj(j,i);
                     window.repaint();
                     return;
                 }
             }
         }
 
-        // If nothing was clicked, if the board is solved, stop calling actionPerformed
+        // If nothing was clicked because the board is solved, stop calling actionPerformed
         if (board.isSolved()) {
             clock.stop();
         }
@@ -386,6 +465,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         getHints();
         window.repaint();
     }
+
     public static void main(String[] args) {
         Game game = new Game();
         game.runGame();
