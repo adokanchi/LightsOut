@@ -55,7 +55,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             return;
         }
 
-        long[] best = minimizePopcount(res.particular, res.nullBasis, N, 24);
+        long[] best = minimizePopcount(res.particular, res.nullBasis);
 
         // write hints
         for (int i = 0; i < N; i++) {
@@ -142,12 +142,13 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         return new SolveResult(x0, nullBasis, true);
     }
 
-    private long[] minimizePopcount(long[] x0, long[][] basis, int N, int maxK) {
+    private long[] minimizePopcount(long[] x0, long[][] basis) {
         int k = basis.length;
         if (k == 0) {
             return x0;
         }
 
+        final int maxK = 24;
         if (k > maxK) {
             // too many free vars to brute force exactly
             window.setErrString("Too complicated for optimal solution. Showing basic solution.");

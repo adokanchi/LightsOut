@@ -78,7 +78,7 @@ public class GameView extends JFrame {
 
         // Write error text
         final int ERR_TEXT_OFFSET_Y = 20;
-        FontMetrics fm = g.getFontMetrics();;
+        FontMetrics fm = g.getFontMetrics();
         g.drawString(errString, (WINDOW_WIDTH - fm.stringWidth(errString)) / 2, WINDOW_HEIGHT - ERR_TEXT_OFFSET_Y);
     }
 }
