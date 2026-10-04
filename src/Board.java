@@ -67,13 +67,6 @@ public class Board {
             return false;
         }
 
-        if (board[col][row].isHint()) {
-            board[col][row].setHint(false);
-        }
-        else {
-            clearHints();
-        }
-
         board[col][row].toggle();
         // Attempts to toggle each of the 4 cells around the clicked cell
         if (col - 1 >= 0) {
@@ -101,6 +94,7 @@ public class Board {
                 }
             }
         }
+        clearHints();
     }
 
     // Gives a random solvable scramble by starting with a solved board and
@@ -110,7 +104,7 @@ public class Board {
         int n = board.length;
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
-                if ((int) (Math.random() + 0.5) == 1) {
+                if (Math.random() < 0.5) {
                     toggleAllAdj(i,j);
                 }
             }

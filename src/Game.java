@@ -33,7 +33,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     // Executes the animated solve option
     public void solveAnim() {
-        clock.start();
+        if (getNumRows() < 10) slowClock.start();
+        else if (getNumRows() < 25) clock.start();
+        else if (getNumRows() < 50) fastClock.start();
+        else veryFastClock.start();
     }
 
     // Compute which cells need to be clicked for an optimal solution, mark with hint border
@@ -42,9 +45,11 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         board.clearHints();
         int n = board.getBoard().length;
         boolean[][] on = new boolean[n][n];
-        for (int r = 0; r < n; r++)
-            for (int c = 0; c < n; c++)
-                on[r][c] = board.getBoard()[r][c].isOn();
+        for (int row = 0; row < n; row++) {
+            for (int col = 0; col < n; col++) {
+                on[col][row] = board.getBoard()[col][row].isOn();
+            }
+        }
 
         long[][] aug = buildAugmentedSystem(on);
         int N = n * n;
@@ -59,8 +64,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
         // write hints
         for (int i = 0; i < N; i++) {
-            int r = i / n, c = i % n;
-            board.getBoard()[r][c].setHint(getBit(best, i));
+            int col = i / n;
+            int row = i % n;
+            board.getBoard()[col][row].setHint(getBit(best, i));
         }
     }
 
@@ -148,36 +154,30 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             return x0;
         }
 
-        final int maxK = 24;
+        final int maxK = 28;
         if (k > maxK) {
-            // too many free vars to brute force exactly
             window.setErrString("Too complicated for optimal solution. Showing basic solution.");
             return x0;
         }
 
+        long[] cur = x0.clone();
         long[] best = x0.clone();
         int bestW = popcount(best);
+        int W = cur.length;
 
-        int total = 1 << k;
-        long[] cur = new long[best.length];
-
-        for (int mask = 0; mask < total; mask++) {
-            // cur = x0 XOR (xor of selected basis vectors)
-            System.arraycopy(x0, 0, cur, 0, cur.length);
-            int m = mask;
-            int idx = 0;
-            while (m != 0) {
-                if ((m & 1) != 0) {
-                    for (int w = 0; w < cur.length; w++) cur[w] ^= basis[idx][w];
-                }
-                idx++;
-                m >>>= 1;
+        long total = 1L << k;
+        for (long i = 1; i < total && bestW > 0; i++) {
+            // Gray code: step i flips exactly one coefficient, the lowest set bit of i
+            long[] b = basis[Long.numberOfTrailingZeros(i)];
+            int wgt = 0;
+            for (int w = 0; w < W; w++) {
+                long v = cur[w] ^ b[w];
+                cur[w] = v;
+                wgt += Long.bitCount(v);
             }
-            int wgt = popcount(cur);
             if (wgt < bestW) {
                 bestW = wgt;
-                best = cur.clone();
-                if (bestW == 0) break;
+                System.arraycopy(cur, 0, best, 0, W);
             }
         }
         return best;
@@ -359,6 +359,13 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         return new int[] {xCellIndex, yCellIndex};
     }
 
+    public void stopClocks() {
+        slowClock.stop();
+        clock.stop();
+        fastClock.stop();
+        veryFastClock.stop();
+    }
+
     public void runGame() {
         window = new GameView(this);
         this.window.addMouseListener(this);
@@ -374,11 +381,11 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         int x = e.getX();
         int y = e.getY();
         int[] coords = coordsToIndices(x,y);
-        int row = coords[0];
-        int col = coords[1];
+        int col = coords[0];
+        int row = coords[1];
 
         // Attempts to toggle the cell. Runs code inside if outside the array
-        if (!board.toggleAllAdj(row,col)) {
+        if (!board.toggleAllAdj(col, row)) {
             final int BUTTON_OFFSET = 50;
             final int BUTTON_SIZE = 100;
 
@@ -403,6 +410,15 @@ public class Game implements MouseListener, KeyListener, ActionListener {
                 solvePerfect();
             }
         }
+        else {
+            if (board.getBoard()[col][row].isHint()) {
+                board.getBoard()[col][row].setHint(false);
+            }
+            else {
+                board.clearHints();
+                stopClocks();
+            }
+        }
         window.repaint();
     }
     public void mousePressed(MouseEvent e) {}
@@ -416,6 +432,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             setBoard(Integer.parseInt(rowsInput));
             board.scramble();
             rowsInput = "";
+            stopClocks();
             window.repaint();
             return;
         }
@@ -442,7 +459,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     public void keyReleased(KeyEvent e) {}
     public void keyPressed(KeyEvent e) {}
 
-    Timer clock = new Timer(500, this);
+    Timer slowClock = new Timer(500, this);
+    Timer clock = new Timer(200, this);
+    Timer fastClock = new Timer(50, this);
+    Timer veryFastClock = new Timer(10, this);
     public void actionPerformed(ActionEvent e) {
         // Click the first hint square
         // If anything is clicked, return immediately
@@ -450,6 +470,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             for (int j = 0; j < getNumRows(); j++) {
                 if (board.getBoard()[j][i].isHint()) {
                     board.toggleAllAdj(j,i);
+                    board.getBoard()[j][i].setHint(false);
                     window.repaint();
                     return;
                 }
@@ -458,7 +479,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
         // If nothing was clicked because the board is solved, stop calling actionPerformed
         if (board.isSolved()) {
-            clock.stop();
+            stopClocks();
         }
 
         // If nothing was clicked but the board still isn't solved, there
