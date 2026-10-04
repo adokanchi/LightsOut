@@ -15,7 +15,16 @@ public class ChaseSolver {
     private final int[] pivotRow;
     private final int rank;
 
-    // Basis for the nullspace of the full n^2-by-n^2 matrix, one click pattern per vector
+    // Largest nullity for which every solution is searched for the one with the fewest clicks.
+    // The search checks 2^nullity click patterns, so each step up doubles the time.
+    public static final int MAX_SEARCH_NULLITY = 28;
+
+    // Number of free columns of C = dimension of the nullspace
+    private final int nullity;
+
+    // Basis for the nullspace of the full n^2-by-n^2 matrix, one click pattern per vector.
+    // Left empty when the nullity is above MAX_SEARCH_NULLITY: the basis is only used by the
+    // search, and for large boards with high nullity it would take hundreds of MB or more.
     private final long[][] nullBasis;
 
     public ChaseSolver(int n) {
@@ -71,11 +80,12 @@ public class ChaseSolver {
             row++;
         }
         rank = row;
+        nullity = n - rank;
 
         // Nullspace of C: one first-line click pattern per free column. Chasing each one
         // on an empty board turns it into a full click pattern that changes nothing.
         ArrayList<long[]> basis = new ArrayList<>();
-        for (int f = 0; f < n; f++) {
+        for (int f = 0; f < n && nullity <= MAX_SEARCH_NULLITY; f++) {
             if (pivotRow[f] != -1) continue;
 
             long[] top = new long[lineWords];
@@ -90,7 +100,7 @@ public class ChaseSolver {
     }
 
     public int getNullity() {
-        return nullBasis.length;
+        return nullity;
     }
 
     // on[line][pos] is true when that cell is lit. Returns one click pattern that solves
@@ -106,6 +116,33 @@ public class ChaseSolver {
         // d = what stays lit past the last line when chasing with no first-line clicks
         long[] d = chase(state, new long[lineWords])[n];
 
+        long[] top = firstLineClicks(d);
+        if (top == null) return new SolveResult(null, null, false);
+
+        long[] x0 = pack(chase(state, top));
+        return new SolveResult(x0, nullBasis, true);
+    }
+
+    // For a board that is dark everywhere except its last line: lastLineLit[pos] says which
+    // cells of that line are lit. Returns which cells of the first line to click so that
+    // chasing afterwards leaves the whole board dark, or null if that is impossible.
+    public boolean[] firstLineClicks(boolean[] lastLineLit) {
+        long[] d = new long[lineWords];
+        for (int b = 0; b < n; b++) {
+            if (lastLineLit[b]) setBit(d, b);
+        }
+        long[] top = firstLineClicks(d);
+        if (top == null) return null;
+
+        boolean[] clicks = new boolean[n];
+        for (int b = 0; b < n; b++) clicks[b] = getBit(top, b);
+        return clicks;
+    }
+
+    // Solves C * top = d using the stored row reduction, with every free variable set to 0.
+    // d is what stays lit past the last line when chasing with no first-line clicks.
+    // Returns null if there is no solution.
+    private long[] firstLineClicks(long[] d) {
         // Apply the stored row operations to d, giving the right-hand side of the reduced system
         long[] rhs = new long[lineWords];
         for (int r = 0; r < n; r++) {
@@ -118,18 +155,15 @@ public class ChaseSolver {
 
         // Rows past the rank are all zero on the left, so they must be zero on the right
         for (int r = rank; r < n; r++) {
-            if (getBit(rhs, r)) return new SolveResult(null, null, false);
+            if (getBit(rhs, r)) return null;
         }
 
-        // First-line clicks, with every free variable set to 0
         long[] top = new long[lineWords];
         for (int col = 0; col < n; col++) {
             int pr = pivotRow[col];
             if (pr != -1 && getBit(rhs, pr)) setBit(top, col);
         }
-
-        long[] x0 = pack(chase(state, top));
-        return new SolveResult(x0, nullBasis, true);
+        return top;
     }
 
     // Clicks 'top' on the first line, then on each later line clicks under every cell

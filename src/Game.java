@@ -1,13 +1,11 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.util.Arrays;
 
 public class Game implements MouseListener, KeyListener, ActionListener {
     private GameView window;
     private Board board;
     private ChaseSolver solver;
-    public static final int MAX_BOARD_SIZE = 8000;
 
     // rowsInput is the string the user inputs to change the row number
     private String rowsInput;
@@ -20,6 +18,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         return board;
     }
 
+
+    // Largest board size that can be typed in.
+    public static final int MAX_BOARD_SIZE = 8000;
+
     public void setBoard(int numRows) {
         // Build both before replacing anything, so a failure leaves the current board intact
         Board newBoard = new Board(numRows);
@@ -28,11 +30,14 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         solver = newSolver;
     }
 
+    // Turns the typed text into a board size, or returns -1 if it is not a whole number
+    // from 1 to MAX_BOARD_SIZE
     private int parseBoardSize(String text) {
         int size;
         try {
             size = Integer.parseInt(text);
         } catch (NumberFormatException e) {
+            // Not a number that fits in an int
             return -1;
         }
         if (size < 1 || size > MAX_BOARD_SIZE) return -1;
@@ -87,14 +92,14 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     }
 
     private long[] minimizePopcount(long[] x0, long[][] basis) {
-        int k = basis.length;
+        int k = solver.getNullity();
         window.setStatusText("Nullity " + k);
         if (k == 0) {
             return x0;
         }
 
-        final int maxK = 28;
-        if (k > maxK) {
+        // Above the cap the solver does not build the basis at all, so it must not be used here
+        if (k > ChaseSolver.MAX_SEARCH_NULLITY) {
             window.setStatusText("Nullity " + k + " - too complicated for optimal solution. Showing basic solution.");
             return x0;
         }
@@ -148,119 +153,30 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         if (board.isSolved()) {
             return;
         }
-        // If all rows are solved other than the last
+        // All rows are solved other than the last
 
-        // Figures out how top-row clicks impact the bottom row after propagation by
-        // testing every possibility on a separate board and storing them in topRowMatrix
-        Board b2 = new Board(getNumRows());
-        int[][] topRowMatrix = new int[getNumRows()][getNumRows()];
+        boolean[] botRow = new boolean[getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
-            // Click the first-row cell at position i
-            b2.toggleAllAdj(i, 0);
-            b2.propagate();
-            // Store the changes in topRowMatrix as 1s and the constants as 0
-            for (int j = 0; j < getNumRows(); j++) {
-                topRowMatrix[i][j] = b2.getBoard()[j][getNumRows() - 1].isOn() ? 1 : 0;
-            }
-            b2.solve();
+            botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn();
         }
 
-        // botRow is the real board's bottom row
-        int[] botRow = new int[getNumRows()];
-        for (int i = 0; i < getNumRows(); i++) {
-            botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn() ? 1 : 0;
+        // Find the top-row clicks that, after propagating, would leave the bottom row solved.
+        boolean[] topRowClicks = solver.firstLineClicks(botRow);
+        if (topRowClicks == null) {
+            // No solution exists from this position
+            return;
         }
-
-        // Find a linear combination of top-row moves that would convert the bottom row to solved
-        int[] linCombs = solveLinCombMod2(topRowMatrix, botRow);
 
         // Hint squares
-        for (int i = 0; i < linCombs.length; i++) {
-            if (linCombs[i] == 1) {
+        for (int i = 0; i < topRowClicks.length; i++) {
+            if (topRowClicks[i]) {
                 board.getBoard()[i][0].setHint(true);
             }
         }
     }
 
-    // Performs Gaussian Elimination on arrs to find x satisfying arrs*x=target, returns x
-    public int[] solveLinCombMod2(int[][] arrs, int[] target) {
-        int n = arrs.length;
-        if (n == 0) return new int[0];
-
-        int cols = n + 1;
-        int W = (cols + 63) >>> 6;
-
-        long[][] mat = new long[n][W];
-        for (int r = 0; r < n; r++) {
-            // M[r][c] = arrs[c][r]
-            for (int c = 0; c < n; c++) {
-                if ((arrs[c][r] & 1) != 0) setBit(mat[r], c);
-            }
-            if ((target[r] & 1) != 0) setBit(mat[r], n);
-        }
-
-        // where = pivot locations
-        int[] where = new int[n];
-        Arrays.fill(where, -1);
-
-        int row = 0;
-        for (int col = 0; col < n && row < n; col++) {
-            // Find pivot
-            int pivot = -1;
-            for (int r = row; r < n; r++) {
-                if (getBit(mat[r], col)) {
-                    pivot = r;
-                    break;
-                }
-            }
-            if (pivot == -1) continue;
-
-            // Swap rows
-            if (pivot != row) {
-                long[] tmp = mat[pivot];
-                mat[pivot] = mat[row];
-                mat[row] = tmp;
-            }
-            where[col] = row;
-
-            // Eliminate below
-            for (int r = row + 1; r < n; r++) {
-                if (getBit(mat[r], col)) xorRow(mat[r], mat[row]);
-            }
-
-            row++;
-        }
-
-        // Back substitution (free variables set to 0)
-        int[] x = new int[n];
-        for (int col = n - 1; col >= 0; col--) {
-            int r = where[col];
-            if (r == -1) {
-                x[col] = 0;
-                continue;
-            }
-
-            boolean rhs = getBit(mat[r], n);
-            // compute dot product of row with current x for columns > col
-            for (int c2 = col + 1; c2 < n; c2++) {
-                if (getBit(mat[r], c2) && x[c2] == 1) rhs = !rhs;
-            }
-            x[col] = rhs ? 1 : 0;
-        }
-
-        return x;
-    }
-
-    private static void xorRow(long[] dst, long[] src) {
-        for (int i = 0; i < dst.length; i++) dst[i] ^= src[i];
-    }
-
     private static boolean getBit(long[] row, int bit) {
         return ((row[bit >>> 6] >>> (bit & 63)) & 1L) != 0;
-    }
-
-    private static void setBit(long[] row, int bit) {
-        row[bit >>> 6] |= 1L << (bit & 63);
     }
 
     // Turns x/y coordinates of a click into info on which cell was clicked
