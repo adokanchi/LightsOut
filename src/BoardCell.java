@@ -1,4 +1,5 @@
 import java.awt.*;
+
 public class BoardCell {
     private boolean isOn;
     // isHint is true when the cell is marked as a cell to click by the hint tool
@@ -30,22 +31,33 @@ public class BoardCell {
     }
 
     public void draw(Graphics g, int x, int y, int size) {
-        int OUTLINE_WIDTH = 2;
-        // Outline color
-        g.setColor(Color.BLACK);
-        if (isHint) {
-            g.setColor(Color.RED);
-            OUTLINE_WIDTH = 4;
-        }
-        // Outline
-        g.fillRect(x,y,size,size);
+        // Outline is 2 pixels, shrinking to 1 when 2 would leave a center of 1 pixel or less,
+        // and to 0 when even a 1-pixel outline would leave no center at all
+        int outline = 2;
+        if (size - 2 * outline <= 1) outline = 1;
+        if (size - 2 * outline <= 0) outline = 0;
 
-        // Center color
-        g.setColor(Color.DARK_GRAY);
-        if (isOn) {
-            g.setColor(Color.WHITE);
+        Color center = isOn ? Color.WHITE : Color.DARK_GRAY;
+
+        // Too small for an outline: the whole cell is one color, and a hint is solid red
+        if (outline == 0) {
+            g.setColor(isHint ? Color.RED : center);
+            g.fillRect(x, y, size, size);
+            return;
         }
+
+        // Hinted cells get a red outline twice as thick, unless that would shrink the
+        // center to 1 pixel or less, in which case it stays as thick as a normal outline
+        if (isHint && size - 4 * outline > 1) {
+            outline *= 2;
+        }
+
+        // Outline
+        g.setColor(isHint ? Color.RED : Color.BLACK);
+        g.fillRect(x, y, size, size);
+
         // Center
-        g.fillRect(x+OUTLINE_WIDTH,y+OUTLINE_WIDTH,size-2*OUTLINE_WIDTH,size-2*OUTLINE_WIDTH);
+        g.setColor(center);
+        g.fillRect(x + outline, y + outline, size - 2 * outline, size - 2 * outline);
     }
 }

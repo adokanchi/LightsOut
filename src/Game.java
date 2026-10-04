@@ -5,8 +5,9 @@ import java.util.Arrays;
 
 public class Game implements MouseListener, KeyListener, ActionListener {
     private GameView window;
-
     private Board board;
+    private ChaseSolver solver;
+    public static final int MAX_BOARD_SIZE = 8000;
 
     // rowsInput is the string the user inputs to change the row number
     private String rowsInput;
@@ -20,7 +21,22 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     }
 
     public void setBoard(int numRows) {
-        board = new Board(numRows);
+        // Build both before replacing anything, so a failure leaves the current board intact
+        Board newBoard = new Board(numRows);
+        ChaseSolver newSolver = new ChaseSolver(numRows);
+        board = newBoard;
+        solver = newSolver;
+    }
+
+    private int parseBoardSize(String text) {
+        int size;
+        try {
+            size = Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+        if (size < 1 || size > MAX_BOARD_SIZE) return -1;
+        return size;
     }
 
     public int getNumRows() {
@@ -36,7 +52,8 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         if (getNumRows() < 10) slowClock.start();
         else if (getNumRows() < 25) clock.start();
         else if (getNumRows() < 50) fastClock.start();
-        else veryFastClock.start();
+        else if (getNumRows() < 300) veryFastClock.start();
+        else board.clickHints();
     }
 
     // Compute which cells need to be clicked for an optimal solution, mark with hint border
@@ -51,10 +68,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             }
         }
 
-        long[][] aug = buildAugmentedSystem(on);
         int N = n * n;
 
-        SolveResult res = solveAndNullspace(aug, N);
+        SolveResult res = solver.solve(on);
         if (!res.solvable) {
             // no solution
             return;
@@ -70,93 +86,16 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         }
     }
 
-    private SolveResult solveAndNullspace(long[][] aug, int N) {
-        // aug: N rows, bits 0..N-1 are A, bit N is rhs
-        int cols = N + 1;
-        int W = (cols + 63) >>> 6;
-
-        int[] where = new int[N];
-        java.util.Arrays.fill(where, -1);
-
-        int row = 0;
-        for (int col = 0; col < N && row < N; col++) {
-            int pivot = -1;
-            for (int r = row; r < N; r++) {
-                if (getBit(aug[r], col)) { pivot = r; break; }
-            }
-            if (pivot == -1) continue;
-
-            if (pivot != row) {
-                long[] tmp = aug[pivot];
-                aug[pivot] = aug[row];
-                aug[row] = tmp;
-            }
-
-            where[col] = row;
-
-            // eliminate all other 1s in this pivot column (Gauss–Jordan)
-            for (int r2 = 0; r2 < N; r2++) {
-                if (r2 != row && getBit(aug[r2], col)) xorRow(aug[r2], aug[row]);
-            }
-
-
-            row++;
-        }
-
-        // inconsistency check
-        for (int r = 0; r < N; r++) {
-            boolean anyLeft = false;
-            for (int c = 0; c < N; c++) {
-                if (getBit(aug[r], c)) { anyLeft = true; break; }
-            }
-            if (!anyLeft && getBit(aug[r], N)) {
-                return new SolveResult(null, null, false);
-            }
-        }
-
-        // back-sub to get one particular solution (free vars = 0)
-        long[] x0 = new long[W];
-        for (int col = N - 1; col >= 0; col--) {
-            int r = where[col];
-            if (r == -1) continue; // free var remains 0
-
-            boolean rhs = getBit(aug[r], N);
-            for (int c2 = col + 1; c2 < N; c2++) {
-                if (getBit(aug[r], c2) && getBit(x0, c2)) rhs = !rhs;
-            }
-            if (rhs) setBit(x0, col);
-        }
-
-        // build nullspace basis: one vector per free column f
-        java.util.ArrayList<long[]> basis = new java.util.ArrayList<>();
-        for (int f = 0; f < N; f++) {
-            if (where[f] != -1) continue; // pivot column, not free
-
-            long[] v = new long[W];
-            setBit(v, f); // free var = 1
-
-            // for each pivot column p, set v[p] = A[row(p)][f]
-            for (int p = 0; p < N; p++) {
-                int pr = where[p];
-                if (pr == -1) continue;
-                if (getBit(aug[pr], f)) setBit(v, p);
-            }
-            basis.add(v);
-        }
-
-        long[][] nullBasis = basis.toArray(new long[0][]);
-        return new SolveResult(x0, nullBasis, true);
-    }
-
     private long[] minimizePopcount(long[] x0, long[][] basis) {
         int k = basis.length;
+        window.setStatusText("Nullity " + k);
         if (k == 0) {
             return x0;
         }
 
         final int maxK = 28;
         if (k > maxK) {
-            window.setErrString("Too complicated for optimal solution. Showing basic solution.");
+            window.setStatusText("Nullity " + k + " - too complicated for optimal solution. Showing basic solution.");
             return x0;
         }
 
@@ -183,32 +122,6 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         return best;
     }
 
-    private long[][] buildAugmentedSystem(boolean[][] on) {
-        int n = on.length;
-        int N = n * n;
-        int cols = N + 1;
-        int W = (cols + 63) >>> 6;
-
-        long[][] aug = new long[N][W];
-
-        for (int r = 0; r < n; r++) {
-            for (int c = 0; c < n; c++) {
-                int cell = r * n + c;
-
-                // presses that affect this cell:
-                setBit(aug[cell], cell);
-                if (c > 0) setBit(aug[cell], cell - 1);
-                if (c < n - 1) setBit(aug[cell], cell + 1);
-                if (r > 0) setBit(aug[cell], cell - n);
-                if (r < n - 1) setBit(aug[cell], cell + n);
-
-                // RHS = state[cell]
-                if (on[r][c]) setBit(aug[cell], N);
-            }
-        }
-        return aug;
-    }
-
     private int popcount(long[] v) {
         int s = 0;
         for (long x : v) s += Long.bitCount(x);
@@ -220,10 +133,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         board.clearHints();
         // Hints for propagation
         boolean hintGiven = false;
-        for (int i = 0; i < getNumRows()-1; i++) {
+        for (int i = 0; i < getNumRows() - 1; i++) {
             for (int j = 0; j < getNumRows(); j++) {
                 if (board.getBoard()[j][i].isOn()) {
-                    board.getBoard()[j][i+1].setHint(true);
+                    board.getBoard()[j][i + 1].setHint(true);
                     hintGiven = true;
                 }
             }
@@ -243,7 +156,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         int[][] topRowMatrix = new int[getNumRows()][getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
             // Click the first-row cell at position i
-            b2.toggleAllAdj(i,0);
+            b2.toggleAllAdj(i, 0);
             b2.propagate();
             // Store the changes in topRowMatrix as 1s and the constants as 0
             for (int j = 0; j < getNumRows(); j++) {
@@ -295,7 +208,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             // Find pivot
             int pivot = -1;
             for (int r = row; r < n; r++) {
-                if (getBit(mat[r], col)) { pivot = r; break; }
+                if (getBit(mat[r], col)) {
+                    pivot = r;
+                    break;
+                }
             }
             if (pivot == -1) continue;
 
@@ -349,13 +265,16 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     // Turns x/y coordinates of a click into info on which cell was clicked
     public int[] coordsToIndices(int xCoord, int yCoord) {
-        int boardSize = board.getCellSize() * getNumRows();
+        int boardSize = board.getPixelSize();
         // xTL =  top left corner x-coordinate, yTL = top left corner y-coordinate
-        int xTL = (GameView.WINDOW_WIDTH - boardSize) / 2;
-        int yTL = (GameView.WINDOW_HEIGHT - boardSize) / 2;
+        int xTL = (window.getPanelWidth() - boardSize) / 2;
+        int yTL = (window.getPanelHeight() - boardSize) / 2;
+        if (xCoord < xTL || yCoord < yTL) {
+            return new int[] {-1, -1};
+        }
         // Number of cells = (distance to top left corner) / (distance per cell)
-        int xCellIndex = (xCoord - xTL) / board.getCellSize();
-        int yCellIndex = (yCoord - yTL) / board.getCellSize();
+        int xCellIndex = (int) ((long) (xCoord - xTL) * getNumRows() / boardSize);
+        int yCellIndex = (int) ((long) (yCoord - yTL) * getNumRows() / boardSize);
         return new int[] {xCellIndex, yCellIndex};
     }
 
@@ -368,7 +287,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
     public void runGame() {
         window = new GameView(this);
-        this.window.addMouseListener(this);
+        this.window.addPanelMouseListener(this);
         this.window.addKeyListener(this);
         Toolkit.getDefaultToolkit().sync();
     }
@@ -377,10 +296,10 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         if (board == null) {
             return;
         }
-        if (window != null) window.clearErrString();
+        if (window != null) window.clearStatusText();
         int x = e.getX();
         int y = e.getY();
-        int[] coords = coordsToIndices(x,y);
+        int[] coords = coordsToIndices(x, y);
         int col = coords[0];
         int row = coords[1];
 
@@ -389,50 +308,63 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             final int BUTTON_OFFSET = 50;
             final int BUTTON_SIZE = 100;
 
+            int w = window.getPanelWidth();
+            int h = window.getPanelHeight();
+
             // Top left = hint
-            if (x < BUTTON_SIZE+BUTTON_OFFSET && y < BUTTON_SIZE+BUTTON_OFFSET) {
+            if (x < BUTTON_SIZE + BUTTON_OFFSET && y < BUTTON_SIZE + BUTTON_OFFSET) {
                 getHints();
             }
             // Bottom right = propagate
-            if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y > GameView.WINDOW_HEIGHT-BUTTON_SIZE-BUTTON_OFFSET) {
+            if (x > w - BUTTON_SIZE - BUTTON_OFFSET && y > h - BUTTON_SIZE - BUTTON_OFFSET) {
                 board.propagate();
             }
             // Bottom left = scramble
-            if (x < BUTTON_SIZE+BUTTON_OFFSET && y > GameView.WINDOW_HEIGHT-BUTTON_SIZE-BUTTON_OFFSET) {
+            if (x < BUTTON_SIZE + BUTTON_OFFSET && y > h - BUTTON_SIZE - BUTTON_OFFSET) {
                 board.scramble();
             }
             // Top right = solve
-            if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y < BUTTON_SIZE+BUTTON_OFFSET) {
+            if (x > w - BUTTON_SIZE - BUTTON_OFFSET && y < BUTTON_SIZE + BUTTON_OFFSET) {
                 solveAnim();
             }
             // Middle right = perfect solve
-            if (x > GameView.WINDOW_WIDTH-BUTTON_SIZE-BUTTON_OFFSET && y > (GameView.WINDOW_HEIGHT - BUTTON_SIZE) / 2 && y < (GameView.WINDOW_HEIGHT + BUTTON_SIZE) / 2) {
+            if (x > w - BUTTON_SIZE - BUTTON_OFFSET && y > (h - BUTTON_SIZE) / 2 && y < (h + BUTTON_SIZE) / 2) {
                 solvePerfect();
             }
-        }
-        else {
+        } else {
             if (board.getBoard()[col][row].isHint()) {
                 board.getBoard()[col][row].setHint(false);
-            }
-            else {
+            } else {
                 board.clearHints();
                 stopClocks();
             }
         }
         window.repaint();
     }
-    public void mousePressed(MouseEvent e) {}
-    public void mouseReleased(MouseEvent e) {}
-    public void mouseEntered(MouseEvent e) {}
-    public void mouseExited(MouseEvent e) {}
+    public void mousePressed(MouseEvent e) { }
+    public void mouseReleased(MouseEvent e) { }
+    public void mouseEntered(MouseEvent e) { }
+    public void mouseExited(MouseEvent e) { }
     public void keyTyped(KeyEvent e) {
         // If enter is pressed, change board size
         if (e.getKeyChar() == (KeyEvent.VK_ENTER)) {
             if (rowsInput.isEmpty()) return;
-            setBoard(Integer.parseInt(rowsInput));
-            board.scramble();
+            int size = parseBoardSize(rowsInput);
             rowsInput = "";
+            if (size == -1) {
+                window.setStatusText("Board size must be a whole number from 1 to " + MAX_BOARD_SIZE + ".");
+                window.repaint();
+                return;
+            }
             stopClocks();
+
+            try {
+                setBoard(size);
+                board.scramble();
+                window.clearStatusText();
+            } catch (OutOfMemoryError outOfMemory) {
+                window.setStatusText("Not enough memory for a " + size + "x" + size + " board.");
+            }
             window.repaint();
             return;
         }
@@ -456,8 +388,8 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             window.repaint();
         }
     }
-    public void keyReleased(KeyEvent e) {}
-    public void keyPressed(KeyEvent e) {}
+    public void keyReleased(KeyEvent e) { }
+    public void keyPressed(KeyEvent e) { }
 
     Timer slowClock = new Timer(500, this);
     Timer clock = new Timer(200, this);
@@ -469,7 +401,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         for (int i = 0; i < getNumRows(); i++) {
             for (int j = 0; j < getNumRows(); j++) {
                 if (board.getBoard()[j][i].isHint()) {
-                    board.toggleAllAdj(j,i);
+                    board.toggleAllAdj(j, i);
                     board.getBoard()[j][i].setHint(false);
                     window.repaint();
                     return;
@@ -489,7 +421,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     }
 
     public static void main(String[] args) {
-        Game game = new Game();
-        game.runGame();
+        SwingUtilities.invokeLater(() -> {
+            Game game = new Game();
+            game.runGame();
+        });
     }
 }
