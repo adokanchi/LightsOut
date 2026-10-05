@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.stream.IntStream;
 
 public class ChaseSolver {
     private final int n;
@@ -18,6 +19,9 @@ public class ChaseSolver {
     // Largest nullity for which every solution is searched for the one with the fewest clicks.
     // The search checks 2^nullity click patterns, so each step up doubles the time.
     public static final int MAX_SEARCH_NULLITY = 28;
+
+    // Boards at least this size use every processor core for the row reduction
+    private static final int PARALLEL_MIN_SIZE = 4000;
 
     // Number of free columns of C = dimension of the nullspace
     private final int nullity;
@@ -172,21 +176,30 @@ public class ChaseSolver {
 
             // Step 3: clear the block's pivot columns from every other row. The row's bits in
             // those columns say which pivot rows it needs, which is exactly a table entry.
-            for (int r = 0; r < n; r++) {
-                if (r >= row && r < row + found) continue;
-                int bits = extractBits(reduced[r], blockStart, width);
+            // Each row is changed independently of the others and the table is only read, so
+            // on large boards the rows are shared out between all processor cores. On small
+            // boards handing the work out costs more than it saves.
+            final int firstPivotRow = row;
+            final int pivotCount = found;
+            final int start = blockStart;
+            final int blockWidth = width;
+            IntStream rows = IntStream.range(0, n);
+            if (n >= PARALLEL_MIN_SIZE) rows = rows.parallel();
+            rows.forEach(r -> {
+                if (r >= firstPivotRow && r < firstPivotRow + pivotCount) return;
+                int bits = extractBits(reduced[r], start, blockWidth);
                 int entry;
-                if (found == width) {
+                if (pivotCount == blockWidth) {
                     // Every column of the block has a pivot, in order: the bits are the entry
                     entry = bits;
                 } else {
                     entry = 0;
-                    for (int i = 0; i < found; i++) {
+                    for (int i = 0; i < pivotCount; i++) {
                         entry |= ((bits >>> pivotOffset[i]) & 1) << i;
                     }
                 }
                 if (entry != 0) xorFrom(reduced[r], table[entry], firstWord);
-            }
+            });
 
             row += found;
         }
