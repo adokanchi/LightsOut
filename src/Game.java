@@ -20,7 +20,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
 
     // Largest board size that can be typed in.
-    public static final int MAX_BOARD_SIZE = 8000;
+    public static final int MAX_BOARD_SIZE = 12000;
 
     public void setBoard(int numRows) {
         // Build both before replacing anything, so a failure leaves the current board intact
@@ -45,7 +45,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     }
 
     public int getNumRows() {
-        return board.getBoard().length;
+        return board.getSize();
     }
 
     public String getRowsInput() {
@@ -65,17 +65,8 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     // Generates a "good" solution when the board structure doesn't lead to crazy complications
     public void solvePerfect() {
         board.clearHints();
-        int n = board.getBoard().length;
-        boolean[][] on = new boolean[n][n];
-        for (int row = 0; row < n; row++) {
-            for (int col = 0; col < n; col++) {
-                on[col][row] = board.getBoard()[col][row].isOn();
-            }
-        }
-
-        int N = n * n;
-
-        SolveResult res = solver.solve(on);
+        // The solver reads the board's own rows of lit cells directly, so nothing is copied
+        SolveResult res = solver.solve(board.getLitRows());
         if (!res.solvable) {
             // no solution
             return;
@@ -84,11 +75,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         long[] best = minimizePopcount(res.particular, res.nullBasis);
 
         // write hints
-        for (int i = 0; i < N; i++) {
-            int col = i / n;
-            int row = i % n;
-            board.getBoard()[col][row].setHint(getBit(best, i));
-        }
+        board.setHints(best);
     }
 
     private long[] minimizePopcount(long[] x0, long[][] basis) {
@@ -136,28 +123,21 @@ public class Game implements MouseListener, KeyListener, ActionListener {
     // Gives user a hint, highlighting squares to click in red
     public void getHints() {
         board.clearHints();
-        // Hints for propagation
-        boolean hintGiven = false;
-        for (int i = 0; i < getNumRows() - 1; i++) {
-            for (int j = 0; j < getNumRows(); j++) {
-                if (board.getBoard()[j][i].isOn()) {
-                    board.getBoard()[j][i + 1].setHint(true);
-                    hintGiven = true;
-                }
-            }
-            if (hintGiven) {
-                return;
-            }
-        }
-
-        if (board.isSolved()) {
+        // Hints for propagation: hint underneath the lit cells of the first row that has any
+        int firstLitRow = board.firstLitRow();
+        if (firstLitRow == -1) {
+            // Already solved
             return;
         }
-        // All rows are solved other than the last
+        if (firstLitRow < getNumRows() - 1) {
+            board.hintBelowRow(firstLitRow);
+            return;
+        }
 
+        // All rows are solved other than the last
         boolean[] botRow = new boolean[getNumRows()];
         for (int i = 0; i < getNumRows(); i++) {
-            botRow[i] = board.getBoard()[i][getNumRows() - 1].isOn();
+            botRow[i] = board.isOn(i, getNumRows() - 1);
         }
 
         // Find the top-row clicks that, after propagating, would leave the bottom row solved.
@@ -170,13 +150,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         // Hint squares
         for (int i = 0; i < topRowClicks.length; i++) {
             if (topRowClicks[i]) {
-                board.getBoard()[i][0].setHint(true);
+                board.setHint(i, 0, true);
             }
         }
-    }
-
-    private static boolean getBit(long[] row, int bit) {
-        return ((row[bit >>> 6] >>> (bit & 63)) & 1L) != 0;
     }
 
     // Turns x/y coordinates of a click into info on which cell was clicked
@@ -248,8 +224,8 @@ public class Game implements MouseListener, KeyListener, ActionListener {
                 solvePerfect();
             }
         } else {
-            if (board.getBoard()[col][row].isHint()) {
-                board.getBoard()[col][row].setHint(false);
+            if (board.isHint(col, row)) {
+                board.setHint(col, row, false);
             } else {
                 board.clearHints();
                 stopClocks();
@@ -316,9 +292,9 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         // If anything is clicked, return immediately
         for (int i = 0; i < getNumRows(); i++) {
             for (int j = 0; j < getNumRows(); j++) {
-                if (board.getBoard()[j][i].isHint()) {
+                if (board.isHint(j, i)) {
                     board.toggleAllAdj(j, i);
-                    board.getBoard()[j][i].setHint(false);
+                    board.setHint(j, i, false);
                     window.repaint();
                     return;
                 }

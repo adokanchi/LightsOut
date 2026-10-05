@@ -103,16 +103,10 @@ public class ChaseSolver {
         return nullity;
     }
 
-    // on[line][pos] is true when that cell is lit. Returns one click pattern that solves
-    // the board plus the nullspace basis, or solvable = false if no solution exists.
-    public SolveResult solve(boolean[][] on) {
-        long[][] state = new long[n][lineWords];
-        for (int a = 0; a < n; a++) {
-            for (int b = 0; b < n; b++) {
-                if (on[a][b]) setBit(state[a], b);
-            }
-        }
-
+    // state[line] holds one bit per cell of that line: bit pos is 1 when the cell is lit.
+    // It is only read, never changed. Returns one click pattern that solves the board plus
+    // the nullspace basis, or solvable = false if no solution exists.
+    public SolveResult solve(long[][] state) {
         // d = what stays lit past the last line when chasing with no first-line clicks
         long[] d = chase(state, new long[lineWords])[n];
 
