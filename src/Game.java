@@ -21,7 +21,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
 
     // Largest board size that can be typed in.
-    public static final int MAX_BOARD_SIZE = 20000;
+    public static final int MAX_BOARD_SIZE = 24000;
 
     public void setBoard(int numRows) {
         // Build both before replacing anything, so a failure leaves the current board intact
@@ -86,13 +86,32 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             return x0;
         }
 
-        // Above the cap the solver does not build the basis at all, so it must not be used here
-        if (k > ChaseSolver.MAX_SEARCH_NULLITY) {
-            window.setStatusText("Nullity " + k + " - too complicated for optimal solution. Showing basic solution.");
+        // Over the time limit the solver does not build the basis at all, so it must not be used here
+        if (!solver.canSearch()) {
+            window.setStatusText("Nullity " + k + " - optimal solution would take about "
+                    + describeDuration(solver.estimatedSearchSeconds()) + " (limit is "
+                    + describeDuration(ChaseSolver.MAX_SEARCH_SECONDS) + "). Showing basic solution.");
             return x0;
         }
 
         return searchFewestClicks(x0, basis);
+    }
+
+    // Turns a number of seconds into a short readable length of time, e.g. "45 seconds" or "3 hours"
+    private static String describeDuration(double seconds) {
+        String[] units = {"second", "minute", "hour", "day", "year"};
+        double[] perNextUnit = {60, 60, 24, 365};
+        double amount = seconds;
+        int unit = 0;
+        while (unit < perNextUnit.length && amount >= perNextUnit[unit]) {
+            amount /= perNextUnit[unit];
+            unit++;
+        }
+        String number;
+        if (amount >= 1e6) number = String.format("%.0e", amount);
+        else if (amount >= 10) number = String.format("%.0f", amount);
+        else number = String.format("%.1f", amount).replace(".0", "");
+        return number + " " + units[unit] + (number.equals("1") ? "" : "s");
     }
 
     // Tries every solution x0 XOR (any combination of the basis vectors) and returns the one

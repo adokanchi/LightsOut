@@ -92,7 +92,7 @@ public class Board {
             long[] hintRow = hint[row];
             for (int w = 0; w < rowWords; w++) {
                 // This row starts at bit row * size, usually not on a word boundary, so each
-                // word of the row comes from two neighbouring words of clicks
+                // word of the row comes from two neighboring words of clicks
                 long start = (long) row * size + ((long) w << 6);
                 int idx = (int) (start >>> 6);
                 int shift = (int) (start & 63);
@@ -237,7 +237,7 @@ public class Board {
 
     // Clicks every cell whose bit is set in clicks, a whole row at a time. Clicking is just
     // toggling, so the order does not matter and each row's clicks can be applied together:
-    // they toggle themselves and their left/right neighbours in their own row, and the cells
+    // they toggle themselves and their left/right neighbors in their own row, and the cells
     // directly above and below.
     private void applyClicks(long[][] clicks) {
         for (int row = 0; row < size; row++) {

@@ -16,9 +16,15 @@ public class ChaseSolver {
     private final int[] pivotRow;
     private final int rank;
 
-    // Largest nullity for which every solution is searched for the one with the fewest clicks.
-    // The search checks 2^nullity click patterns, so each step up doubles the time.
-    public static final int MAX_SEARCH_NULLITY = 28;
+    // The longest search for the fewest-clicks solution that will be attempted, in seconds.
+    // Boards whose search is estimated to take longer get the basic solution instead.
+    // Change this number (and restart) to allow longer searches.
+    public static final double MAX_SEARCH_SECONDS = 20;
+
+    // How fast the search runs, used to turn the amount of work into an estimated time.
+    // One step is one XOR-and-count of 64 cells. This figure is from an 8-core Ryzen 7 7730U
+    // laptop using all its cores; a faster machine will simply finish sooner than estimated.
+    private static final double SEARCH_STEPS_PER_SECOND = 1.2e10;
 
     // Boards at least this size use every processor core for the row reduction
     private static final int PARALLEL_MIN_SIZE = 4000;
@@ -27,7 +33,7 @@ public class ChaseSolver {
     private final int nullity;
 
     // Basis for the nullspace of the full n^2-by-n^2 matrix, one click pattern per vector.
-    // Left empty when the nullity is above MAX_SEARCH_NULLITY: the basis is only used by the
+    // Left empty when the search is over the time limit: the basis is only used by the
     // search, and for large boards with high nullity it would take hundreds of MB or more.
     private final long[][] nullBasis;
 
@@ -40,7 +46,7 @@ public class ChaseSolver {
         // clicking cell j of the first line on an empty board and chasing.
         //
         // Only column 0 is found by actually chasing. C is a polynomial in the matrix M that
-        // maps a line of clicks to "each click's two neighbours", and the unit vectors satisfy
+        // maps a line of clicks to "each click's two neighbors", and the unit vectors satisfy
         // e(j+1) = M e(j) + e(j-1), so the columns satisfy the same rule:
         //     column(j+1) = M * column(j) + column(j-1)
         // C is also symmetric, so column j can be stored directly as row j.
@@ -68,7 +74,7 @@ public class ChaseSolver {
         // Nullspace of C: one first-line click pattern per free column. Chasing each one
         // on an empty board turns it into a full click pattern that changes nothing.
         ArrayList<long[]> basis = new ArrayList<>();
-        for (int f = 0; f < n && nullity <= MAX_SEARCH_NULLITY; f++) {
+        for (int f = 0; f < n && canSearch(); f++) {
             if (pivotRow[f] != -1) continue;
 
             long[] top = new long[lineWords];
@@ -234,6 +240,18 @@ public class ChaseSolver {
         return nullity;
     }
 
+    // Estimated time in seconds to search every solution for the one with the fewest clicks.
+    // There are 2^nullity solutions, and checking each one takes one step per 64 cells.
+    public double estimatedSearchSeconds() {
+        if (nullity == 0) return 0;
+        return Math.pow(2, nullity) * fullWords / SEARCH_STEPS_PER_SECOND;
+    }
+
+    // Whether the search fits within MAX_SEARCH_SECONDS
+    public boolean canSearch() {
+        return estimatedSearchSeconds() <= MAX_SEARCH_SECONDS;
+    }
+
     // state[line] holds one bit per cell of that line: bit pos is 1 when the cell is lit.
     // It is only read, never changed. Returns one click pattern that solves the board plus
     // the nullspace basis, or solvable = false if no solution exists.
@@ -309,7 +327,7 @@ public class ChaseSolver {
     }
 
     // Which cells of a line get toggled by clicks on that same line: each click
-    // toggles itself and its two neighbours
+    // toggles itself and its two neighbors
     private long[] sameLineEffect(long[] line) {
         long[] out = new long[lineWords];
         for (int w = 0; w < lineWords; w++) {
@@ -328,7 +346,7 @@ public class ChaseSolver {
 
     // Lays the n click lines end to end into one n * n bit vector, copying a word (64 cells)
     // at a time. Line a starts at bit a * n, which is usually not on a word boundary, so each
-    // word of the line is split across two neighbouring words of the result.
+    // word of the line is split across two neighboring words of the result.
     private long[] pack(long[][] clicks) {
         long[] v = new long[fullWords];
         for (int a = 0; a < n; a++) {
