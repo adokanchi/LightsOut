@@ -20,7 +20,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
 
     // Largest board size that can be typed in.
-    public static final int MAX_BOARD_SIZE = 12000;
+    public static final int MAX_BOARD_SIZE = 20000;
 
     public void setBoard(int numRows) {
         // Build both before replacing anything, so a failure leaves the current board intact

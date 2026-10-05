@@ -58,28 +58,7 @@ public class ChaseSolver {
         // Gauss-Jordan elimination on the n-by-n system
         pivotRow = new int[n];
         Arrays.fill(pivotRow, -1);
-        int row = 0;
-        for (int col = 0; col < n && row < n; col++) {
-            int pivot = -1;
-            for (int r = row; r < n; r++) {
-                if (getBit(reduced[r], col)) {
-                    pivot = r;
-                    break;
-                }
-            }
-            if (pivot == -1) continue;
-
-            long[] tmp = reduced[pivot];
-            reduced[pivot] = reduced[row];
-            reduced[row] = tmp;
-            pivotRow[col] = row;
-
-            for (int r2 = 0; r2 < n; r2++) {
-                if (r2 != row && getBit(reduced[r2], col)) xorInto(reduced[r2], reduced[row]);
-            }
-            row++;
-        }
-        rank = row;
+        rank = rowReduce();
         nullity = n - rank;
 
         // Nullspace of C: one first-line click pattern per free column. Chasing each one
@@ -97,6 +76,145 @@ public class ChaseSolver {
             basis.add(pack(chase(null, top)));
         }
         nullBasis = basis.toArray(new long[0][]);
+    }
+
+    // Row-reduces [C | I] in place and fills in pivotRow. Returns the rank.
+    //
+    // This is Gauss-Jordan elimination done several columns at a time (the "Method of the
+    // Four Russians"). Plain elimination clears one column per row XOR. Here the columns are
+    // taken in blocks: for each block, every XOR combination of the block's pivot rows is put
+    // in a table, and then each other row has all of the block's columns cleared with a single
+    // XOR of the table entry that matches its bits. The result is exactly what clearing one
+    // column at a time produces, in about a quarter of the row XORs.
+    private int rowReduce() {
+        // Columns per block. Bigger blocks mean fewer passes over the matrix but a table of
+        // 2^blockSize rows to build each time; these values were the fastest when measured.
+        final int blockSize = n < 4000 ? 8 : 10;
+        final int matWords = reduced[0].length;
+
+        long[][] table = new long[1 << blockSize][matWords];
+        // For each pivot found in the current block: its column's offset within the block,
+        // and the pivot row's bits in the block's columns
+        int[] pivotOffset = new int[blockSize];
+        int[] pivotBits = new int[blockSize];
+
+        int row = 0;
+        for (int blockStart = 0; blockStart < n && row < n; blockStart += blockSize) {
+            int width = Math.min(blockSize, n - blockStart);
+            // Every row from 'row' down is already zero in all earlier columns, so nothing
+            // before this word can change and the XORs can start here
+            int firstWord = blockStart >>> 6;
+
+            // Step 1: find the pivot rows for this block's columns. They end up in rows
+            // row, row + 1, ... and are kept reduced against each other, so that within the
+            // block each one has a 1 in its own pivot column and 0 in the others'.
+            int found = 0;
+            for (int offset = 0; offset < width && row + found < n; offset++) {
+                // Look for a row that still has a 1 in this column once the pivots already
+                // found in this block are cleared from it. That is worked out on the row's
+                // few block bits alone, without touching the full row.
+                int pivot = -1;
+                int pivotBlockBits = 0;
+                for (int r = row + found; r < n; r++) {
+                    int bits = reduceBlockBits(extractBits(reduced[r], blockStart, width), pivotOffset, pivotBits, found);
+                    if (((bits >>> offset) & 1) != 0) {
+                        pivot = r;
+                        pivotBlockBits = bits;
+                        break;
+                    }
+                }
+                // No pivot: this column is free
+                if (pivot == -1) continue;
+
+                // Now clear the earlier pivots of this block from the chosen row for real
+                long[] pivotRowBits = reduced[pivot];
+                int bits = extractBits(pivotRowBits, blockStart, width);
+                for (int i = 0; i < found; i++) {
+                    if (((bits >>> pivotOffset[i]) & 1) != 0) {
+                        bits ^= pivotBits[i];
+                        xorFrom(pivotRowBits, reduced[row + i], firstWord);
+                    }
+                }
+
+                // Move it up to sit just below the pivots already found
+                reduced[pivot] = reduced[row + found];
+                reduced[row + found] = pivotRowBits;
+
+                // Clear the new pivot's column from the earlier pivots of this block
+                for (int i = 0; i < found; i++) {
+                    if (((pivotBits[i] >>> offset) & 1) != 0) {
+                        xorFrom(reduced[row + i], pivotRowBits, firstWord);
+                        pivotBits[i] ^= pivotBlockBits;
+                    }
+                }
+
+                pivotOffset[found] = offset;
+                pivotBits[found] = pivotBlockBits;
+                pivotRow[blockStart + offset] = row + found;
+                found++;
+            }
+            if (found == 0) continue;
+
+            // Step 2: build the table. Entry number e is the XOR of the pivot rows whose bit
+            // is set in e (bit i = the i-th pivot of this block). Going through the entries in
+            // Gray-code order means each one is the previous entry XOR a single pivot row.
+            int entries = 1 << found;
+            Arrays.fill(table[0], firstWord, matWords, 0L);
+            int previousEntry = 0;
+            for (int g = 1; g < entries; g++) {
+                int entry = g ^ (g >>> 1);
+                long[] source = table[previousEntry];
+                long[] add = reduced[row + Integer.numberOfTrailingZeros(g)];
+                long[] target = table[entry];
+                for (int w = firstWord; w < matWords; w++) target[w] = source[w] ^ add[w];
+                previousEntry = entry;
+            }
+
+            // Step 3: clear the block's pivot columns from every other row. The row's bits in
+            // those columns say which pivot rows it needs, which is exactly a table entry.
+            for (int r = 0; r < n; r++) {
+                if (r >= row && r < row + found) continue;
+                int bits = extractBits(reduced[r], blockStart, width);
+                int entry;
+                if (found == width) {
+                    // Every column of the block has a pivot, in order: the bits are the entry
+                    entry = bits;
+                } else {
+                    entry = 0;
+                    for (int i = 0; i < found; i++) {
+                        entry |= ((bits >>> pivotOffset[i]) & 1) << i;
+                    }
+                }
+                if (entry != 0) xorFrom(reduced[r], table[entry], firstWord);
+            }
+
+            row += found;
+        }
+        return row;
+    }
+
+    // The bits a row would have in the current block's columns after clearing from it the
+    // pivots found so far in the block
+    private static int reduceBlockBits(int bits, int[] pivotOffset, int[] pivotBits, int found) {
+        for (int i = 0; i < found; i++) {
+            if (((bits >>> pivotOffset[i]) & 1) != 0) bits ^= pivotBits[i];
+        }
+        return bits;
+    }
+
+    // Reads 'count' bits (at most 32) of row starting at bit 'start', as a number whose
+    // bit 0 is the bit at 'start'
+    private static int extractBits(long[] row, int start, int count) {
+        int word = start >>> 6;
+        int shift = start & 63;
+        long value = row[word] >>> shift;
+        if (shift + count > 64 && word + 1 < row.length) value |= row[word + 1] << (64 - shift);
+        return (int) (value & ((1L << count) - 1));
+    }
+
+    // dst ^= src, for the words from firstWord on
+    private static void xorFrom(long[] dst, long[] src, int firstWord) {
+        for (int w = firstWord; w < dst.length; w++) dst[w] ^= src[w];
     }
 
     public int getNullity() {
