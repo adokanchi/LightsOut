@@ -1,7 +1,27 @@
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.stream.IntStream;
 
+// Solves Lights Out for one board size using light chasing.
+//
+// Clicking some cells of the first line and then chasing (clicking under every lit cell, line
+// by line) leaves every line dark except possibly the last. What is left lit there is C * top,
+// where top is the first-line clicks and C is an n-by-n "chasing matrix". A board is solved by
+// choosing top so that C * top cancels what chasing with no first-line clicks would leave.
+//
+// C is never built as a matrix. It equals c(M), a polynomial in the matrix M that maps a line
+// of clicks to "each click's two neighbours", and every line of the board can be written
+// uniquely as p(M) e0 for a polynomial p of degree below n (e0 = the line with only its first
+// cell set). Applying C then becomes multiplying polynomials, mod the polynomial chi with
+// chi(M) = 0. So instead of row-reducing an n-by-n matrix (about n^3 / 64 operations), solving
+// C * top = d is polynomial arithmetic: one greatest-common-divisor calculation when the
+// solver is created, and a multiplication per solve, each about n^2 / 64 operations.
+//
+// The polynomials involved are the ones the chasing recurrence produces:
+//     q_0 = 0, q_1 = 1, q_(i+1) = x * q_i + q_(i-1)
+// chi = q_(n+1), the line with only cell j set is q_(j+1)(M) e0, and c(x) = q_(n+1)(x + 1).
+//
+// A line is one row of the board, stored the way Board stores it: one bit per cell.
+// Click patterns are returned as one long bit vector with the lines laid end to end,
+// so cell i is line i / n, position i % n. Chasing runs from line 0 to line n - 1.
 public class ChaseSolver {
     private final int n;
     // Number of 64-bit words needed to hold one line of the board (n bits)
@@ -9,23 +29,21 @@ public class ChaseSolver {
     // Number of 64-bit words needed to hold a full click pattern (n * n bits)
     private final int fullWords;
 
-    // Row-reduced [C | I]. Bits 0..n-1 are the reduced chasing matrix,
-    // bits n..2n-1 are the row operations that were applied to get there.
-    private final long[][] reduced;
-    // pivotRow[col] = row of reduced holding the pivot for that column, or -1 if the column is free
-    private final int[] pivotRow;
-    private final int rank;
-
     // The longest search for the fewest-clicks solution that will be attempted, in seconds.
     // Boards whose search is estimated to take longer get the basic solution instead.
     // Change this number (and restart) to allow longer searches.
     public static final double MAX_SEARCH_SECONDS = 20;
 
+    // chi = q_(n+1): chi(M) = 0, so polynomials standing for lines are taken mod chi
+    private final long[] chi;
+    // g = gcd(c, chi). A board can be solved exactly when g divides its polynomial, and the
+    // degree of g is the nullity.
+    private final long[] g;
+    // s * c = g (mod chi), used to undo the multiplication by c
+    private final long[] multiplier;
 
-    // Boards at least this size use every processor core for the row reduction
-    private static final int PARALLEL_MIN_SIZE = 4000;
-
-    // Number of free columns of C = dimension of the nullspace
+    // Dimension of the nullspace: how many independent ways there are to click without
+    // changing the board
     private final int nullity;
 
     // Basis for the nullspace of the full n^2-by-n^2 matrix, one click pattern per vector.
@@ -34,202 +52,57 @@ public class ChaseSolver {
     private final long[][] nullBasis;
 
     public ChaseSolver(int n) {
+        // Click patterns are indexed by cell number in an int, so n * n has to fit in one
+        if ((long) n * n > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Board size " + n + " is too large; the most is 46340");
+        }
         this.n = n;
         this.lineWords = (n + 63) >>> 6;
         this.fullWords = (n * n + 63) >>> 6;
 
-        // Build [C | I]. Column j of C is what stays lit past the last line after
-        // clicking cell j of the first line on an empty board and chasing.
-        //
-        // Only column 0 is found by actually chasing. C is a polynomial in the matrix M that
-        // maps a line of clicks to "each click's two neighbours", and the unit vectors satisfy
-        // e(j+1) = M e(j) + e(j-1), so the columns satisfy the same rule:
-        //     column(j+1) = M * column(j) + column(j-1)
-        // C is also symmetric, so column j can be stored directly as row j.
-        int matWords = (2 * n + 63) >>> 6;
-        reduced = new long[n][matWords];
-        long[] first = new long[lineWords];
-        setBit(first, 0);
-        long[] previous = new long[lineWords];   // column j - 1 (all zero before column 0)
-        long[] current = chase(null, first)[n];  // column j
-        for (int j = 0; j < n; j++) {
-            System.arraycopy(current, 0, reduced[j], 0, lineWords);
-            long[] next = neighbourEffect(current);
-            xorInto(next, previous);
-            previous = current;
-            current = next;
+        // chi = q_(n+1) and q_(n+1)(x + 1), both from the chasing recurrence
+        int polyWords = BinaryPolynomial.wordsFor(n + 1);
+        long[] qPrev = new long[polyWords];          // q_0 = 0
+        long[] q = new long[polyWords];              // q_1 = 1
+        q[0] = 1;
+        long[] pPrev = new long[polyWords];          // same recurrence with x + 1 in place of x
+        long[] p = new long[polyWords];
+        p[0] = 1;
+        for (int i = 1; i <= n; i++) {
+            // q_(i+1) = x * q_i + q_(i-1), computed in place over q_(i-1)
+            BinaryPolynomial.addShifted(qPrev, q, BinaryPolynomial.degree(q), 1);
+            long[] t = qPrev;
+            qPrev = q;
+            q = t;
+            // p_(i+1) = (x + 1) * p_i + p_(i-1)
+            int dp = BinaryPolynomial.degree(p);
+            BinaryPolynomial.addShifted(pPrev, p, dp, 1);
+            BinaryPolynomial.addShifted(pPrev, p, dp, 0);
+            t = pPrev;
+            pPrev = p;
+            p = t;
         }
-        for (int i = 0; i < n; i++) setBit(reduced[i], n + i);
+        chi = q;
+        long[] c = BinaryPolynomial.mod(p, chi);
 
-        // Gauss-Jordan elimination on the n-by-n system
-        pivotRow = new int[n];
-        Arrays.fill(pivotRow, -1);
-        rank = rowReduce();
-        nullity = n - rank;
+        long[][] gs = BinaryPolynomial.gcdAndMultiplier(c, chi);
+        g = gs[0];
+        multiplier = gs[1];
+        nullity = BinaryPolynomial.degree(g);
 
-        // Nullspace of C: one first-line click pattern per free column. Chasing each one
-        // on an empty board turns it into a full click pattern that changes nothing.
+        // Nullspace of C: the lines h(M) e0, M h(M) e0, ..., M^(nullity-1) h(M) e0 with
+        // h = chi / g. Chasing each one on an empty board turns it into a full click pattern
+        // that changes nothing.
         ArrayList<long[]> basis = new ArrayList<>();
-        for (int f = 0; f < n && canSearch(); f++) {
-            if (pivotRow[f] != -1) continue;
-
-            long[] top = new long[lineWords];
-            setBit(top, f);
-            for (int p = 0; p < n; p++) {
-                int pr = pivotRow[p];
-                if (pr != -1 && getBit(reduced[pr], f)) setBit(top, p);
+        if (nullity > 0 && canSearch()) {
+            long[] h = BinaryPolynomial.divide(chi, g)[0];
+            long[] line = toLine(h);
+            for (int j = 0; j < nullity; j++) {
+                basis.add(pack(chase(null, line)));
+                line = neighbourEffect(line);
             }
-            basis.add(pack(chase(null, top)));
         }
         nullBasis = basis.toArray(new long[0][]);
-    }
-
-    // Row-reduces [C | I] in place and fills in pivotRow. Returns the rank.
-    //
-    // This is Gauss-Jordan elimination done several columns at a time (the "Method of the
-    // Four Russians"). Plain elimination clears one column per row XOR. Here the columns are
-    // taken in blocks: for each block, every XOR combination of the block's pivot rows is put
-    // in a table, and then each other row has all of the block's columns cleared with a single
-    // XOR of the table entry that matches its bits. The result is exactly what clearing one
-    // column at a time produces, in about a quarter of the row XORs.
-    private int rowReduce() {
-        // Columns per block. Bigger blocks mean fewer passes over the matrix but a table of
-        // 2^blockSize rows to build each time; these values were the fastest when measured.
-        final int blockSize = n < 4000 ? 8 : 10;
-        final int matWords = reduced[0].length;
-
-        long[][] table = new long[1 << blockSize][matWords];
-        // For each pivot found in the current block: its column's offset within the block,
-        // and the pivot row's bits in the block's columns
-        int[] pivotOffset = new int[blockSize];
-        int[] pivotBits = new int[blockSize];
-
-        int row = 0;
-        for (int blockStart = 0; blockStart < n && row < n; blockStart += blockSize) {
-            int width = Math.min(blockSize, n - blockStart);
-            // Every row from 'row' down is already zero in all earlier columns, so nothing
-            // before this word can change and the XORs can start here
-            int firstWord = blockStart >>> 6;
-
-            // Step 1: find the pivot rows for this block's columns. They end up in rows
-            // row, row + 1, ... and are kept reduced against each other, so that within the
-            // block each one has a 1 in its own pivot column and 0 in the others'.
-            int found = 0;
-            for (int offset = 0; offset < width && row + found < n; offset++) {
-                // Look for a row that still has a 1 in this column once the pivots already
-                // found in this block are cleared from it. That is worked out on the row's
-                // few block bits alone, without touching the full row.
-                int pivot = -1;
-                int pivotBlockBits = 0;
-                for (int r = row + found; r < n; r++) {
-                    int bits = reduceBlockBits(extractBits(reduced[r], blockStart, width), pivotOffset, pivotBits, found);
-                    if (((bits >>> offset) & 1) != 0) {
-                        pivot = r;
-                        pivotBlockBits = bits;
-                        break;
-                    }
-                }
-                // No pivot: this column is free
-                if (pivot == -1) continue;
-
-                // Now clear the earlier pivots of this block from the chosen row for real
-                long[] pivotRowBits = reduced[pivot];
-                int bits = extractBits(pivotRowBits, blockStart, width);
-                for (int i = 0; i < found; i++) {
-                    if (((bits >>> pivotOffset[i]) & 1) != 0) {
-                        bits ^= pivotBits[i];
-                        xorFrom(pivotRowBits, reduced[row + i], firstWord);
-                    }
-                }
-
-                // Move it up to sit just below the pivots already found
-                reduced[pivot] = reduced[row + found];
-                reduced[row + found] = pivotRowBits;
-
-                // Clear the new pivot's column from the earlier pivots of this block
-                for (int i = 0; i < found; i++) {
-                    if (((pivotBits[i] >>> offset) & 1) != 0) {
-                        xorFrom(reduced[row + i], pivotRowBits, firstWord);
-                        pivotBits[i] ^= pivotBlockBits;
-                    }
-                }
-
-                pivotOffset[found] = offset;
-                pivotBits[found] = pivotBlockBits;
-                pivotRow[blockStart + offset] = row + found;
-                found++;
-            }
-            if (found == 0) continue;
-
-            // Step 2: build the table. Entry number e is the XOR of the pivot rows whose bit
-            // is set in e (bit i = the i-th pivot of this block). Going through the entries in
-            // Gray-code order means each one is the previous entry XOR a single pivot row.
-            int entries = 1 << found;
-            Arrays.fill(table[0], firstWord, matWords, 0L);
-            int previousEntry = 0;
-            for (int g = 1; g < entries; g++) {
-                int entry = g ^ (g >>> 1);
-                long[] source = table[previousEntry];
-                long[] add = reduced[row + Integer.numberOfTrailingZeros(g)];
-                long[] target = table[entry];
-                for (int w = firstWord; w < matWords; w++) target[w] = source[w] ^ add[w];
-                previousEntry = entry;
-            }
-
-            // Step 3: clear the block's pivot columns from every other row. The row's bits in
-            // those columns say which pivot rows it needs, which is exactly a table entry.
-            // Each row is changed independently of the others and the table is only read, so
-            // on large boards the rows are shared out between all processor cores. On small
-            // boards handing the work out costs more than it saves.
-            final int firstPivotRow = row;
-            final int pivotCount = found;
-            final int start = blockStart;
-            final int blockWidth = width;
-            IntStream rows = IntStream.range(0, n);
-            if (n >= PARALLEL_MIN_SIZE) rows = rows.parallel();
-            rows.forEach(r -> {
-                if (r >= firstPivotRow && r < firstPivotRow + pivotCount) return;
-                int bits = extractBits(reduced[r], start, blockWidth);
-                int entry;
-                if (pivotCount == blockWidth) {
-                    // Every column of the block has a pivot, in order: the bits are the entry
-                    entry = bits;
-                } else {
-                    entry = 0;
-                    for (int i = 0; i < pivotCount; i++) {
-                        entry |= ((bits >>> pivotOffset[i]) & 1) << i;
-                    }
-                }
-                if (entry != 0) xorFrom(reduced[r], table[entry], firstWord);
-            });
-
-            row += found;
-        }
-        return row;
-    }
-
-    // The bits a row would have in the current block's columns after clearing from it the
-    // pivots found so far in the block
-    private static int reduceBlockBits(int bits, int[] pivotOffset, int[] pivotBits, int found) {
-        for (int i = 0; i < found; i++) {
-            if (((bits >>> pivotOffset[i]) & 1) != 0) bits ^= pivotBits[i];
-        }
-        return bits;
-    }
-
-    // Reads 'count' bits (at most 32) of row starting at bit 'start', as a number whose
-    // bit 0 is the bit at 'start'
-    private static int extractBits(long[] row, int start, int count) {
-        int word = start >>> 6;
-        int shift = start & 63;
-        long value = row[word] >>> shift;
-        if (shift + count > 64 && word + 1 < row.length) value |= row[word + 1] << (64 - shift);
-        return (int) (value & ((1L << count) - 1));
-    }
-
-    // dst ^= src, for the words from firstWord on
-    private static void xorFrom(long[] dst, long[] src, int firstWord) {
-        for (int w = firstWord; w < dst.length; w++) dst[w] ^= src[w];
     }
 
     public int getNullity() {
@@ -283,31 +156,54 @@ public class ChaseSolver {
         return clicks;
     }
 
-    // Solves C * top = d using the stored row reduction, with every free variable set to 0.
-    // d is what stays lit past the last line when chasing with no first-line clicks.
-    // Returns null if there is no solution.
+    // Solves C * top = d, where d is what stays lit past the last line when chasing with no
+    // first-line clicks. Returns null if there is no solution.
+    //
+    // As polynomials this is c * t = d (mod chi). Since s * c = g (mod chi), it has a solution
+    // exactly when g divides d, and then t = s * (d / g) works.
     private long[] firstLineClicks(long[] d) {
-        // Apply the stored row operations to d, giving the right-hand side of the reduced system
-        long[] rhs = new long[lineWords];
-        for (int r = 0; r < n; r++) {
-            int parity = 0;
-            for (int w = 0; w < lineWords; w++) {
-                parity ^= Long.bitCount(extractWord(reduced[r], n, w) & d[w]) & 1;
+        long[][] qr = BinaryPolynomial.divide(toPolynomial(d), g);
+        if (!BinaryPolynomial.isZero(qr[1])) return null;
+        long[] t = BinaryPolynomial.mod(BinaryPolynomial.multiply(multiplier, qr[0]), chi);
+        return toLine(t);
+    }
+
+    // The polynomial p with p(M) e0 = line. The line with only cell j set is q_(j+1)(M) e0, so
+    // p is the sum of q_(j+1) over the set cells j. The q's are generated as needed.
+    private long[] toPolynomial(long[] line) {
+        int polyWords = BinaryPolynomial.wordsFor(n + 1);
+        long[] p = new long[polyWords];
+        long[] qPrev = new long[polyWords];          // q_0
+        long[] q = new long[polyWords];              // q_1
+        q[0] = 1;
+        int qDegree = 0;
+        for (int j = 0; j < n; j++) {
+            // q is now q_(j+1), of degree j
+            if (getBit(line, j)) {
+                for (int w = 0; w <= (qDegree >>> 6); w++) p[w] ^= q[w];
             }
-            if (parity != 0) setBit(rhs, r);
+            BinaryPolynomial.addShifted(qPrev, q, qDegree, 1);
+            long[] t = qPrev;
+            qPrev = q;
+            q = t;
+            qDegree++;
         }
+        return p;
+    }
 
-        // Rows past the rank are all zero on the left, so they must be zero on the right
-        for (int r = rank; r < n; r++) {
-            if (getBit(rhs, r)) return null;
+    // The line p(M) e0, by Horner's rule: start from zero and, from the highest power down,
+    // apply M and add e0 wherever p has a term
+    private long[] toLine(long[] p) {
+        long[] line = new long[lineWords];
+        long[] next = new long[lineWords];
+        for (int j = BinaryPolynomial.degree(p); j >= 0; j--) {
+            neighbourEffectInto(next, line);
+            long[] t = line;
+            line = next;
+            next = t;
+            if (getBit(p, j)) line[0] ^= 1;
         }
-
-        long[] top = new long[lineWords];
-        for (int col = 0; col < n; col++) {
-            int pr = pivotRow[col];
-            if (pr != -1 && getBit(rhs, pr)) setBit(top, col);
-        }
-        return top;
+        return line;
     }
 
     // Clicks 'top' on the first line, then on each later line clicks under every cell
@@ -365,21 +261,26 @@ public class ChaseSolver {
     }
 
     // Which cells of a line are next to a click on that same line (the matrix M above):
-    // the same as sameLineEffect but without the clicked cells themselves
+    // each click's left and right neighbours
     private long[] neighbourEffect(long[] line) {
-        long[] out = sameLineEffect(line);
-        xorInto(out, line);
+        long[] out = new long[lineWords];
+        neighbourEffectInto(out, line);
         return out;
     }
 
-    // Reads 64 bits of row starting at bit (offset + 64 * w)
-    private static long extractWord(long[] row, int offset, int w) {
-        int start = offset + (w << 6);
-        int idx = start >>> 6;
-        int shift = start & 63;
-        long v = row[idx] >>> shift;
-        if (shift != 0 && idx + 1 < row.length) v |= row[idx + 1] << (64 - shift);
-        return v;
+    // Same as neighbourEffect, writing into out instead of a new array
+    private void neighbourEffectInto(long[] out, long[] line) {
+        for (int w = 0; w < lineWords; w++) {
+            long v = line[w];
+            long up = v << 1;
+            if (w > 0) up |= line[w - 1] >>> 63;
+            long down = v >>> 1;
+            if (w < lineWords - 1) down |= line[w + 1] << 63;
+            out[w] = up ^ down;
+        }
+        // Drop anything shifted past the end of the line
+        int extra = n & 63;
+        if (extra != 0) out[lineWords - 1] &= (1L << extra) - 1;
     }
 
     private static void xorInto(long[] dst, long[] src) {
