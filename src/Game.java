@@ -1,7 +1,6 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.util.stream.IntStream;
 
 public class Game implements MouseListener, KeyListener, ActionListener {
     private GameView window;
@@ -21,7 +20,7 @@ public class Game implements MouseListener, KeyListener, ActionListener {
 
 
     // Largest board size that can be typed in.
-    public static final int MAX_BOARD_SIZE = 24000;
+    public static final int MAX_BOARD_SIZE = 31623;
 
     public void setBoard(int numRows) {
         // Build both before replacing anything, so a failure leaves the current board intact
@@ -86,15 +85,20 @@ public class Game implements MouseListener, KeyListener, ActionListener {
             return x0;
         }
 
-        // Over the time limit the solver does not build the basis at all, so it must not be used here
+        // Over the limits the solver does not build the basis at all, so it must not be used here
         if (!solver.canSearch()) {
-            window.setStatusText("Nullity " + k + " - optimal solution would take about "
-                    + describeDuration(solver.estimatedSearchSeconds()) + " (limit is "
-                    + describeDuration(ChaseSolver.MAX_SEARCH_SECONDS) + "). Showing basic solution.");
+            if (!solver.basisFitsInMemory()) {
+                window.setStatusText("Nullity " + k + " - not enough memory to search for the optimal solution."
+                        + " Showing basic solution.");
+            } else {
+                window.setStatusText("Nullity " + k + " - optimal solution would take about "
+                        + describeDuration(solver.estimatedSearchSeconds()) + " (limit is "
+                        + describeDuration(ChaseSolver.MAX_SEARCH_SECONDS) + "). Showing basic solution.");
+            }
             return x0;
         }
 
-        return searchFewestClicks(x0, basis);
+        return SolutionSearch.fewestClicks(x0, basis, (long) board.getSize() * board.getSize());
     }
 
     // Turns a number of seconds into a short readable length of time, e.g. "45 seconds" or "3 hours"
@@ -112,69 +116,6 @@ public class Game implements MouseListener, KeyListener, ActionListener {
         else if (amount >= 10) number = String.format("%.0f", amount);
         else number = String.format("%.1f", amount).replace(".0", "");
         return number + " " + units[unit] + (number.equals("1") ? "" : "s");
-    }
-
-    // Tries every solution x0 XOR (any combination of the basis vectors) and returns the one
-    // with the fewest clicks. There are 2^k of them for k basis vectors.
-    //
-    // The solutions are visited in Gray-code order, where each one differs from the one
-    // before by a single basis vector, so stepping costs one XOR of the working vector.
-    // To use every processor core, the sequence is cut into equal chunks that are searched
-    // at the same time, each with its own working vector. The chunks are consecutive pieces
-    // of the one sequence and ties go to the earliest position, so the answer is the same
-    // however many cores there are.
-    private static long[] searchFewestClicks(long[] x0, long[][] basis) {
-        int k = basis.length;
-        // 2^chunkBits chunks. 256 is plenty to keep 16 threads evenly busy.
-        int chunkBits = Math.min(k, 8);
-        int stepBits = k - chunkBits;
-
-        // Each chunk reports {fewest clicks it found, position in the sequence where it found them}
-        long[] best = IntStream.range(0, 1 << chunkBits).parallel()
-                .mapToObj(chunk -> searchChunk(x0, basis, (long) chunk << stepBits, 1L << stepBits))
-                .reduce((a, b) -> (b[0] < a[0] || (b[0] == a[0] && b[1] < a[1])) ? b : a)
-                .get();
-
-        return solutionAt(x0, basis, best[1]);
-    }
-
-    // Searches 'count' consecutive positions of the Gray-code sequence starting at 'start'.
-    // Returns {fewest clicks found, the first position that has that few}.
-    private static long[] searchChunk(long[] x0, long[][] basis, long start, long count) {
-        long[] cur = solutionAt(x0, basis, start);
-        int W = cur.length;
-        int bestW = 0;
-        for (long word : cur) bestW += Long.bitCount(word);
-        long bestAt = start;
-
-        for (long i = 1; i < count && bestW > 0; i++) {
-            // Gray code: step i flips exactly one coefficient, the lowest set bit of i
-            long[] b = basis[Long.numberOfTrailingZeros(i)];
-            int wgt = 0;
-            for (int w = 0; w < W; w++) {
-                long v = cur[w] ^ b[w];
-                cur[w] = v;
-                wgt += Long.bitCount(v);
-            }
-            if (wgt < bestW) {
-                bestW = wgt;
-                bestAt = start + i;
-            }
-        }
-        return new long[] {bestW, bestAt};
-    }
-
-    // The solution at a given position of the Gray-code sequence: position p uses the basis
-    // vectors whose bits are set in p XOR (p >> 1)
-    private static long[] solutionAt(long[] x0, long[][] basis, long position) {
-        long[] v = x0.clone();
-        long coefficients = position ^ (position >>> 1);
-        while (coefficients != 0) {
-            long[] b = basis[Long.numberOfTrailingZeros(coefficients)];
-            for (int w = 0; w < v.length; w++) v[w] ^= b[w];
-            coefficients &= coefficients - 1;
-        }
-        return v;
     }
 
     // Gives user a hint, highlighting squares to click in red
